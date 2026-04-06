@@ -1,0 +1,50 @@
+name: SpaceRabbit
+
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "14.0"
+
+settings:
+  base:
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+    CLANG_ENABLE_OBJC_ARC: YES
+
+targets:
+  SpaceRabbit:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: SpaceRabbitApp/Sources
+      - path: SpaceRabbitApp/Resources
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: SpaceRabbit
+        PRODUCT_BUNDLE_IDENTIFIER: com.animaslabs.SpaceRabbit
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: SpaceRabbitApp/Info.plist
+      properties:
+        CFBundleDisplayName: SpaceRabbit
+        LSUIElement: true
+        NSPrincipalClass: NSApplication
+        NSSupportsAutomaticTermination: true
+        NSSupportsSuddenTermination: true
+
+schemes:
+  SpaceRabbit:
+    build:
+      targets:
+        SpaceRabbit: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+    profile:
+      config: Release
+    analyze:
+      config: Debug
