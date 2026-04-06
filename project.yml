@@ -26,6 +26,40 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.animaslabs.SpaceRabbit
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
+    preBuildScripts:
+      - name: Copy spacerabbitd
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/bin/spacerabbitd
+        script: |
+          set -euo pipefail
+
+          candidates=()
+          if [[ -n "${SPACERABBITD_PATH:-}" ]]; then
+            candidates+=("${SPACERABBITD_PATH}")
+          fi
+          candidates+=(
+            "${PROJECT_DIR}/../spacerabbit-core/build/ninja-debug/spacerabbitd"
+            "${PROJECT_DIR}/../spacerabbit-core/build/ninja-debug/package-shared/bin/spacerabbitd"
+            "${PROJECT_DIR}/../spacerabbit-core/build/ninja-debug/package-static/bin/spacerabbitd"
+          )
+
+          daemon_path=""
+          for candidate in "${candidates[@]}"; do
+            if [[ -x "${candidate}" ]]; then
+              daemon_path="${candidate}"
+              break
+            fi
+          done
+
+          if [[ -z "${daemon_path}" ]]; then
+            echo "error: spacerabbitd binary not found. Set SPACERABBITD_PATH or build spacerabbit-core first." >&2
+            exit 1
+          fi
+
+          destination_dir="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/bin"
+          mkdir -p "${destination_dir}"
+          cp "${daemon_path}" "${destination_dir}/spacerabbitd"
+          chmod 755 "${destination_dir}/spacerabbitd"
     info:
       path: SpaceRabbitApp/Info.plist
       properties:

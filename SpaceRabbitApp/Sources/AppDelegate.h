@@ -2,4 +2,7 @@
 
 @interface AppDelegate : NSObject <NSApplicationDelegate>
 
+- (void)quit:(id)sender;
+- (void)restartDaemon:(id)sender;
+
 @end
