@@ -36,26 +36,15 @@ targets:
         script: |
           set -euo pipefail
 
-          candidates=()
-          if [[ -n "${SPACERABBITD_PATH:-}" ]]; then
-            candidates+=("${SPACERABBITD_PATH}")
+          resolver_args=()
+          if [[ "${BUILD_SPACERABBIT_CORE_IF_NEEDED:-0}" == "1" ]]; then
+            resolver_args+=(--build-if-needed)
           fi
-          candidates+=(
-            "${PROJECT_DIR}/../spacerabbit-core/build/ninja-debug/spacerabbitd"
-            "${PROJECT_DIR}/../spacerabbit-core/build/ninja-debug/package-shared/bin/spacerabbitd"
-            "${PROJECT_DIR}/../spacerabbit-core/build/ninja-debug/package-static/bin/spacerabbitd"
-          )
 
-          daemon_path=""
-          for candidate in "${candidates[@]}"; do
-            if [[ -x "${candidate}" ]]; then
-              daemon_path="${candidate}"
-              break
-            fi
-          done
+          daemon_path="$("${PROJECT_DIR}/scripts/resolve-daemon.sh" "${resolver_args[@]}")"
 
           if [[ -z "${daemon_path}" ]]; then
-            echo "error: spacerabbitd binary not found. Set SPACERABBITD_PATH or build spacerabbit-core first." >&2
+            echo "error: spacerabbitd binary not found. Set SPACERABBITD_PATH or make spacerabbit-core available." >&2
             exit 1
           fi
 

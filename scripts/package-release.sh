@@ -48,13 +48,7 @@ function setup_notary_args() {
   fi
 }
 
-require_env SPACERABBITD_PATH
 require_env DEVELOPMENT_TEAM
-
-if [[ ! -x "${SPACERABBITD_PATH}" ]]; then
-  echo "error: SPACERABBITD_PATH is not executable: ${SPACERABBITD_PATH}" >&2
-  exit 1
-fi
 
 if ! command -v xcodegen >/dev/null 2>&1; then
   echo "error: xcodegen is required for release packaging" >&2
@@ -63,6 +57,18 @@ fi
 
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
+BUILD_SPACERABBIT_CORE_IF_NEEDED="${BUILD_SPACERABBIT_CORE_IF_NEEDED:-1}"
+
+resolver_args=()
+if [[ "${BUILD_SPACERABBIT_CORE_IF_NEEDED}" == "1" ]]; then
+  resolver_args+=(--build-if-needed)
+fi
+SPACERABBITD_PATH="${SPACERABBITD_PATH:-$("${ROOT_DIR}/scripts/resolve-daemon.sh" "${resolver_args[@]}")}"
+
+if [[ ! -x "${SPACERABBITD_PATH}" ]]; then
+  echo "error: SPACERABBITD_PATH is not executable: ${SPACERABBITD_PATH}" >&2
+  exit 1
+fi
 
 rm -rf "${BUILD_ROOT}" "${DIST_PATH}" "${DERIVED_DATA_PATH}"
 mkdir -p "${BUILD_ROOT}" "${DIST_PATH}"

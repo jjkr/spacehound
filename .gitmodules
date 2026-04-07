@@ -1,0 +1,3 @@
+[submodule "spacerabbit-core"]
+	path = spacerabbit-core
+	url = git@github.com:animaslabs/spacerabbit-core.git

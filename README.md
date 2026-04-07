@@ -17,8 +17,12 @@ Get the latest installer [HERE](https://github.com/animaslabs/spacerabbit/releas
 
 ## Development
 
-This repo contains the macOS menu bar app shell for SpaceRabbit. The workspace daemon lives in
-the sibling `../spacerabbit-core` checkout and is packaged into the app at build time.
+This repo contains the macOS menu bar app shell for SpaceRabbit. The workspace daemon can come from
+either:
+
+- a repo-local `spacerabbit-core/` checkout or git submodule
+- a sibling `../spacerabbit-core` checkout
+- an explicit `SPACERABBITD_PATH`
 
 ### Prerequisites
 
@@ -52,16 +56,39 @@ time.
 
 By default the Xcode build looks for a local daemon binary at:
 
+- `./spacerabbit-core/build/ninja-release/spacerabbitd`
+- `./spacerabbit-core/build/ninja-release/package-shared/bin/spacerabbitd`
+- `./spacerabbit-core/build/ninja-release/package-static/bin/spacerabbitd`
+- `./spacerabbit-core/build/ninja-debug/spacerabbitd`
+- `./spacerabbit-core/build/ninja-debug/package-shared/bin/spacerabbitd`
+- `./spacerabbit-core/build/ninja-debug/package-static/bin/spacerabbitd`
 - `../spacerabbit-core/build/ninja-debug/spacerabbitd`
 - `../spacerabbit-core/build/ninja-debug/package-shared/bin/spacerabbitd`
 - `../spacerabbit-core/build/ninja-debug/package-static/bin/spacerabbitd`
+- `../spacerabbit-core/build/ninja-release/spacerabbitd`
+- `../spacerabbit-core/build/ninja-release/package-shared/bin/spacerabbitd`
+- `../spacerabbit-core/build/ninja-release/package-static/bin/spacerabbitd`
 
 You can override the source daemon binary by setting `SPACERABBITD_PATH` in the Xcode scheme
 environment or in CI before invoking `xcodebuild`.
 
-For GitHub Actions later, the clean model is: build or download `spacerabbitd` in CI, export its
-path as `SPACERABBITD_PATH`, then let the app build package that artifact into the app bundle. Do
-not fetch binaries at app runtime.
+If you want Xcode or packaging scripts to build the core repo automatically when the daemon is
+missing, set `BUILD_SPACERABBIT_CORE_IF_NEEDED=1`. For a repo-local `spacerabbit-core/` checkout,
+the default build hook now runs:
+
+- `make -C spacerabbit-core release`
+
+You can still override that with one of:
+
+- `SPACERABBIT_CORE_BUILD_COMMAND`: shell command run from the app repo root
+- `spacerabbit-core/scripts/ci-build-spacerabbitd.sh`: executable helper script in the core repo
+
+Example:
+
+```sh
+export BUILD_SPACERABBIT_CORE_IF_NEEDED=1
+make build
+```
 
 On first launch the app creates `~/Library/Application Support/SpaceRabbit/settings.json` if it
 does not already exist, then launches `spacerabbitd --settings <that path>`.
@@ -73,6 +100,8 @@ The repo now includes:
 
 - `scripts/package-release.sh` to archive an arm64-only release build, sign it with Developer ID,
   notarize a ZIP of the app, staple the app, build a DMG, then notarize and staple the DMG.
+- `scripts/resolve-daemon.sh` to locate `spacerabbitd` from a submodule/sibling checkout or build
+  it on demand.
 - `.github/workflows/release.yml` to run the same flow on GitHub Actions and attach the DMG, ZIP,
   and SHA-256 checksums to a release tag.
 
@@ -83,6 +112,7 @@ into `Contents/Helpers` and signs it before the outer app is signed.
 
 Set these repository secrets for GitHub Actions:
 
+- `SUBMODULE_SSH_KEY`: SSH private key with read access to `animaslabs/spacerabbit-core`
 - `BUILD_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
 - `P12_PASSWORD`: password for the `.p12`
 - `BUILD_KEYCHAIN_PASSWORD`: temporary keychain password used during the job
@@ -91,8 +121,13 @@ Set these repository secrets for GitHub Actions:
 - `APPLE_API_KEY_ID`: App Store Connect key ID
 - `APPLE_API_ISSUER_ID`: App Store Connect issuer ID for team keys
 
-Also set `SPACERABBITD_URL` as a repository variable or secret pointing at a prebuilt arm64
-`spacerabbitd` binary that the workflow can download before packaging the app.
+For an all-in-one CI build, this repo now checks out the `spacerabbit-core` git submodule and
+builds it locally before packaging the app. By default it uses the core repo's `make release`
+wrapper, and only needs an override if the core build process changes.
+
+Because the submodule URL is SSH-based (`git@github.com:animaslabs/spacerabbit-core.git`), the
+workflow expects a `SUBMODULE_SSH_KEY` secret so `actions/checkout` can clone the private submodule
+before the build starts.
 
 ### Local Signed Build
 
@@ -103,5 +138,12 @@ export CODE_SIGN_IDENTITY="Developer ID Application"
 export APPLE_API_KEY_PATH=/absolute/path/to/AuthKey_XXXXXX.p8
 export APPLE_API_KEY_ID=XXXXXX
 export APPLE_API_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+make package-release
+```
+
+Or, with a repo-local `spacerabbit-core/` checkout:
+
+```sh
+export BUILD_SPACERABBIT_CORE_IF_NEEDED=1
 make package-release
 ```

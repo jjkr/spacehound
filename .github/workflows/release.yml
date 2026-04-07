@@ -11,21 +11,24 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       RELEASE_VERSION: ${{ github.ref_name }}
       DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
       CODE_SIGN_IDENTITY: Developer ID Application
+      BUILD_SPACERABBIT_CORE_IF_NEEDED: "1"
       BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
       P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
       BUILD_KEYCHAIN_PASSWORD: ${{ secrets.BUILD_KEYCHAIN_PASSWORD }}
       APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-      SPACERABBITD_URL: ${{ vars.SPACERABBITD_URL || secrets.SPACERABBITD_URL }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.SUBMODULE_SSH_KEY }}
 
       - name: Validate release configuration
         run: |
@@ -38,7 +41,6 @@ jobs:
             DEVELOPMENT_TEAM
             APPLE_API_KEY_BASE64
             APPLE_API_KEY_ID
-            SPACERABBITD_URL
           )
 
           for name in "${required_vars[@]}"; do
@@ -48,8 +50,13 @@ jobs:
             fi
           done
 
+          if [[ ! -d spacerabbit-core ]]; then
+            echo "::error::Expected spacerabbit-core/ submodule checkout in this repository."
+            exit 1
+          fi
+
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: brew install xcodegen cmake ninja
 
       - name: Import Developer ID certificate
         env:
@@ -77,13 +84,11 @@ jobs:
           chmod 600 "${APPLE_API_KEY_PATH}"
           echo "APPLE_API_KEY_PATH=${APPLE_API_KEY_PATH}" >> "${GITHUB_ENV}"
 
-      - name: Download spacerabbitd
+      - name: Resolve spacerabbitd from the local checkout
         run: |
           set -euo pipefail
 
-          DAEMON_PATH="${RUNNER_TEMP}/spacerabbitd"
-          curl --fail --location --silent --show-error "${SPACERABBITD_URL}" --output "${DAEMON_PATH}"
-          chmod 755 "${DAEMON_PATH}"
+          DAEMON_PATH="$(./scripts/resolve-daemon.sh --build-if-needed)"
           echo "SPACERABBITD_PATH=${DAEMON_PATH}" >> "${GITHUB_ENV}"
 
       - name: Build signed release artifacts
