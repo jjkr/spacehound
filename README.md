@@ -28,19 +28,22 @@ the sibling `../spacerabbit-core` checkout and is packaged into the app at build
 ### Generate The Project
 
 ```sh
-xcodegen generate
+make generate
 ```
 
 ### Build The App
 
 ```sh
-xcodebuild -project SpaceRabbit.xcodeproj -scheme SpaceRabbit -configuration Debug -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
+make build
 ```
 
 ### Run The App
 
-Open the generated `SpaceRabbit.xcodeproj` in Xcode and run the `SpaceRabbit` scheme. The app
-launches as a menu bar item, supervises `spacerabbitd`, and can be exited from `Quit SpaceRabbit`.
+```sh
+make run
+```
+
+The app launches as a menu bar item, supervises `spacerabbitd`, and can be exited from `Quit SpaceRabbit`.
 
 ### Daemon Development
 
