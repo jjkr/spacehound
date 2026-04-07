@@ -7,16 +7,17 @@ CONFIGURATION ?= Debug
 DERIVED_DATA_PATH ?= build/DerivedData
 APP_NAME := SpaceRabbit.app
 APP_PATH := $(DERIVED_DATA_PATH)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
-BUNDLED_DAEMON_PATH := $(APP_PATH)/Contents/Resources/bin/spacerabbitd
+BUNDLED_DAEMON_PATH := $(APP_PATH)/Contents/Helpers/spacerabbitd
 
-.PHONY: help generate build release run open clean distclean app-path bundle-daemon-path daemon-check
+.PHONY: help generate build release package-release run open clean distclean app-path bundle-daemon-path daemon-check
 
 help:
 	@echo "SpaceRabbit development targets"
 	@echo ""
 	@echo "  make generate           Generate $(PROJECT) from $(PROJECT_SPEC)"
 	@echo "  make build              Build $(SCHEME) ($(CONFIGURATION))"
-	@echo "  make release            Build $(SCHEME) with CONFIGURATION=Release"
+	@echo "  make release            Build $(SCHEME) with CONFIGURATION=Release (unsigned)"
+	@echo "  make package-release    Archive, sign, notarize, and package Release artifacts"
 	@echo "  make run                Build and launch the app bundle"
 	@echo "  make open               Launch the existing built app bundle"
 	@echo "  make clean              Remove repo-local build artifacts"
@@ -46,6 +47,9 @@ build: generate
 
 release:
 	$(MAKE) build CONFIGURATION=Release
+
+package-release: generate
+	./scripts/package-release.sh
 
 run: build
 	open "$(APP_PATH)"

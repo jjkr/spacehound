@@ -215,7 +215,8 @@ static NSString *const SRDaemonPathOverrideEnvironmentVariable = @"SPACERABBITD_
     return [NSURL fileURLWithPath:environmentOverride];
   }
 
-  NSString *bundledPath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"bin/spacerabbitd"];
+  NSString *bundledPath =
+      [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"Contents/Helpers/spacerabbitd"];
   if ([fileManager isExecutableFileAtPath:bundledPath]) {
     return [NSURL fileURLWithPath:bundledPath];
   }

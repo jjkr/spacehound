@@ -47,7 +47,7 @@ The app launches as a menu bar item, supervises `spacerabbitd`, and can be exite
 
 ### Daemon Development
 
-The app bundles `spacerabbitd` into `SpaceRabbit.app/Contents/Resources/bin/spacerabbitd` at build
+The app bundles `spacerabbitd` into `SpaceRabbit.app/Contents/Helpers/spacerabbitd` at build
 time.
 
 By default the Xcode build looks for a local daemon binary at:
@@ -65,3 +65,43 @@ not fetch binaries at app runtime.
 
 On first launch the app creates `~/Library/Application Support/SpaceRabbit/settings.json` if it
 does not already exist, then launches `spacerabbitd --settings <that path>`.
+
+## Distribution
+
+For direct GitHub Releases distribution, ship a signed and notarized DMG as the primary download.
+The repo now includes:
+
+- `scripts/package-release.sh` to archive an arm64-only release build, sign it with Developer ID,
+  notarize a ZIP of the app, staple the app, build a DMG, then notarize and staple the DMG.
+- `.github/workflows/release.yml` to run the same flow on GitHub Actions and attach the DMG, ZIP,
+  and SHA-256 checksums to a release tag.
+
+The daemon must be signed separately because it is a nested executable. The release build copies it
+into `Contents/Helpers` and signs it before the outer app is signed.
+
+### Release Secrets
+
+Set these repository secrets for GitHub Actions:
+
+- `BUILD_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
+- `P12_PASSWORD`: password for the `.p12`
+- `BUILD_KEYCHAIN_PASSWORD`: temporary keychain password used during the job
+- `DEVELOPMENT_TEAM`: your Apple Developer Team ID
+- `APPLE_API_KEY_BASE64`: base64-encoded App Store Connect API key `.p8`
+- `APPLE_API_KEY_ID`: App Store Connect key ID
+- `APPLE_API_ISSUER_ID`: App Store Connect issuer ID for team keys
+
+Also set `SPACERABBITD_URL` as a repository variable or secret pointing at a prebuilt arm64
+`spacerabbitd` binary that the workflow can download before packaging the app.
+
+### Local Signed Build
+
+```sh
+export SPACERABBITD_PATH=/absolute/path/to/spacerabbitd
+export DEVELOPMENT_TEAM=YOURTEAMID
+export CODE_SIGN_IDENTITY="Developer ID Application"
+export APPLE_API_KEY_PATH=/absolute/path/to/AuthKey_XXXXXX.p8
+export APPLE_API_KEY_ID=XXXXXX
+export APPLE_API_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+make package-release
+```

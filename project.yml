@@ -26,10 +26,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.animaslabs.SpaceRabbit
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
+      configs:
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
     preBuildScripts:
       - name: Copy spacerabbitd
         outputFiles:
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/bin/spacerabbitd
+          - $(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/spacerabbitd
         script: |
           set -euo pipefail
 
@@ -56,10 +59,33 @@ targets:
             exit 1
           fi
 
-          destination_dir="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/bin"
+          destination_dir="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          destination_path="${destination_dir}/spacerabbitd"
           mkdir -p "${destination_dir}"
-          cp "${daemon_path}" "${destination_dir}/spacerabbitd"
-          chmod 755 "${destination_dir}/spacerabbitd"
+          cp "${daemon_path}" "${destination_path}"
+          chmod 755 "${destination_path}"
+
+          if [[ "${CODE_SIGNING_ALLOWED:-NO}" == "YES" ]]; then
+            if [[ -z "${EXPANDED_CODE_SIGN_IDENTITY:-}" || "${EXPANDED_CODE_SIGN_IDENTITY}" == "-" ]]; then
+              echo "error: unable to sign spacerabbitd because no expanded code signing identity is available." >&2
+              exit 1
+            fi
+
+            codesign_args=(
+              --force
+              --sign "${EXPANDED_CODE_SIGN_IDENTITY}"
+              --identifier "${PRODUCT_BUNDLE_IDENTIFIER}.daemon"
+            )
+
+            if [[ "${ENABLE_HARDENED_RUNTIME:-NO}" == "YES" ]]; then
+              codesign_args+=(
+                --options runtime
+                --timestamp
+              )
+            fi
+
+            codesign "${codesign_args[@]}" "${destination_path}"
+          fi
     info:
       path: SpaceRabbitApp/Info.plist
       properties:
