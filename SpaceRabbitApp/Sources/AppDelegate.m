@@ -24,17 +24,10 @@
   }
 
   button.toolTip = @"SpaceRabbit";
-
-  NSImage *statusImage =
-      [NSImage imageWithSystemSymbolName:@"square.grid.2x2" accessibilityDescription:@"SpaceRabbit"];
-  if (statusImage != nil) {
-    statusImage.template = YES;
-    button.image = statusImage;
-  } else {
-    button.title = @"SR";
-  }
+  button.image = nil;
 
   self.runtimeHost = [[SRRuntimeHost alloc] init];
+  button.title = self.runtimeHost.menuBarTitle;
   self.statusMenu = [[NSMenu alloc] initWithTitle:@"SpaceRabbit"];
 
   NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"SpaceRabbit" action:nil keyEquivalent:@""];
@@ -56,7 +49,11 @@
   self.statusItem.menu = self.statusMenu;
 
   __weak typeof(self) weakSelf = self;
-  self.runtimeHost.statusChangeHandler = ^(NSString *statusText) {
+  self.runtimeHost.stateChangeHandler = ^(NSString *menuBarTitle, NSString *statusText) {
+    NSStatusBarButton *strongButton = weakSelf.statusItem.button;
+    if (strongButton != nil) {
+      strongButton.title = menuBarTitle;
+    }
     weakSelf.runtimeStatusItem.title = statusText;
   };
   [self.runtimeHost start];

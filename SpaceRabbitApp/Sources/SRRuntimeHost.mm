@@ -5,11 +5,12 @@
 @interface SRRuntimeHost ()
 
 @property(nonatomic, copy) NSString *statusText;
+@property(nonatomic, copy) NSString *menuBarTitle;
 
 - (void)handleWorkspaceStateChangeWithCurrentSpace:(NSUInteger)currentSpace
                                          numSpaces:(NSUInteger)numSpaces;
 - (NSString *)statusTextForError:(const spacerabbit::daemon::error &)error;
-- (void)updateStatusText:(NSString *)statusText;
+- (void)updateMenuBarTitle:(NSString *)menuBarTitle statusText:(NSString *)statusText;
 - (BOOL)ensureDefaultSettingsFileExists:(NSURL *_Nullable *_Nullable)settingsURL
                                   error:(NSError *_Nullable *_Nullable)error;
 
@@ -39,6 +40,7 @@ static void SRRuntimeHostActiveSpaceChanged(
   }
 
   _statusText = @"Stopped";
+  _menuBarTitle = @"";
   return self;
 }
 
@@ -51,13 +53,13 @@ static void SRRuntimeHostActiveSpaceChanged(
     return;
   }
 
-  [self updateStatusText:@"Starting..."];
+  [self updateMenuBarTitle:@"" statusText:@"Starting..."];
 
   NSURL *settingsURL = nil;
   NSError *settingsError = nil;
   if (![self ensureDefaultSettingsFileExists:&settingsURL error:&settingsError]) {
     NSString *message = settingsError.localizedDescription ?: @"Failed to prepare settings";
-    [self updateStatusText:message];
+    [self updateMenuBarTitle:@"" statusText:message];
     return;
   }
 
@@ -70,7 +72,7 @@ static void SRRuntimeHostActiveSpaceChanged(
   if (!started.has_value()) {
     NSString *message = [self statusTextForError:started.error()];
     NSLog(@"SpaceRabbit runtime start failed: %@", message);
-    [self updateStatusText:message];
+    [self updateMenuBarTitle:@"" statusText:message];
     return;
   }
 
@@ -81,7 +83,7 @@ static void SRRuntimeHostActiveSpaceChanged(
     return;
   }
 
-  [self updateStatusText:@"Running"];
+  [self updateMenuBarTitle:@"" statusText:@"Running"];
 }
 
 - (void)stop {
@@ -89,19 +91,20 @@ static void SRRuntimeHostActiveSpaceChanged(
     _runtime.stop();
   }
 
-  [self updateStatusText:@"Stopped"];
+  [self updateMenuBarTitle:@"" statusText:@"Stopped"];
 }
 
 - (void)handleWorkspaceStateChangeWithCurrentSpace:(NSUInteger)currentSpace
                                          numSpaces:(NSUInteger)numSpaces {
   if (currentSpace == 0 || numSpaces == 0) {
-    [self updateStatusText:@"Running"];
+    [self updateMenuBarTitle:@"" statusText:@"Running"];
     return;
   }
 
-  [self updateStatusText:[NSString stringWithFormat:@"Space %lu of %lu",
-                                                    (unsigned long)currentSpace,
-                                                    (unsigned long)numSpaces]];
+  [self updateMenuBarTitle:[NSString stringWithFormat:@"%lu", (unsigned long)currentSpace]
+                statusText:[NSString stringWithFormat:@"Space %lu of %lu",
+                                                      (unsigned long)currentSpace,
+                                                      (unsigned long)numSpaces]];
 }
 
 - (NSString *)statusTextForError:(const spacerabbit::daemon::error &)error {
@@ -127,11 +130,12 @@ static void SRRuntimeHostActiveSpaceChanged(
   return @"Runtime error";
 }
 
-- (void)updateStatusText:(NSString *)statusText {
+- (void)updateMenuBarTitle:(NSString *)menuBarTitle statusText:(NSString *)statusText {
+  _menuBarTitle = [menuBarTitle copy];
   _statusText = [statusText copy];
 
-  if (self.statusChangeHandler != nil) {
-    self.statusChangeHandler(_statusText);
+  if (self.stateChangeHandler != nil) {
+    self.stateChangeHandler(_menuBarTitle, _statusText);
   }
 }
 
