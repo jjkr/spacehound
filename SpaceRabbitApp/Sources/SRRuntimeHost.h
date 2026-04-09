@@ -2,13 +2,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface SRDaemonSupervisor : NSObject
+@interface SRRuntimeHost : NSObject
 
 @property(nonatomic, copy, readonly) NSString *statusText;
 @property(nonatomic, copy, nullable) void (^statusChangeHandler)(NSString *statusText);
 
 - (void)start;
-- (void)restart;
 - (void)stop;
 
 @end

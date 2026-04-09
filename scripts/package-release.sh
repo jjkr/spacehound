@@ -57,18 +57,6 @@ fi
 
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
-BUILD_SPACERABBIT_CORE_IF_NEEDED="${BUILD_SPACERABBIT_CORE_IF_NEEDED:-1}"
-
-resolver_args=()
-if [[ "${BUILD_SPACERABBIT_CORE_IF_NEEDED}" == "1" ]]; then
-  resolver_args+=(--build-if-needed)
-fi
-SPACERABBITD_PATH="${SPACERABBITD_PATH:-$("${ROOT_DIR}/scripts/resolve-daemon.sh" "${resolver_args[@]}")}"
-
-if [[ ! -x "${SPACERABBITD_PATH}" ]]; then
-  echo "error: SPACERABBITD_PATH is not executable: ${SPACERABBITD_PATH}" >&2
-  exit 1
-fi
 
 rm -rf "${BUILD_ROOT}" "${DIST_PATH}" "${DERIVED_DATA_PATH}"
 mkdir -p "${BUILD_ROOT}" "${DIST_PATH}"
@@ -105,7 +93,6 @@ xcodebuild \
   -archivePath "${ARCHIVE_PATH}" \
   -destination "generic/platform=macOS" \
   -arch arm64 \
-  SPACERABBITD_PATH="${SPACERABBITD_PATH}" \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \

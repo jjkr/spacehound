@@ -1,12 +1,12 @@
 #import "AppDelegate.h"
-#import "SRDaemonSupervisor.h"
+#import "SRRuntimeHost.h"
 
 @interface AppDelegate ()
 
 @property(nonatomic, strong) NSStatusItem *statusItem;
 @property(nonatomic, strong) NSMenu *statusMenu;
-@property(nonatomic, strong) NSMenuItem *daemonStatusItem;
-@property(nonatomic, strong) SRDaemonSupervisor *daemonSupervisor;
+@property(nonatomic, strong) NSMenuItem *runtimeStatusItem;
+@property(nonatomic, strong) SRRuntimeHost *runtimeHost;
 
 @end
 
@@ -34,22 +34,17 @@
     button.title = @"SR";
   }
 
-  self.daemonSupervisor = [[SRDaemonSupervisor alloc] init];
+  self.runtimeHost = [[SRRuntimeHost alloc] init];
   self.statusMenu = [[NSMenu alloc] initWithTitle:@"SpaceRabbit"];
 
   NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"SpaceRabbit" action:nil keyEquivalent:@""];
   titleItem.enabled = NO;
   [self.statusMenu addItem:titleItem];
 
-  self.daemonStatusItem =
-      [[NSMenuItem alloc] initWithTitle:self.daemonSupervisor.statusText action:nil keyEquivalent:@""];
-  self.daemonStatusItem.enabled = NO;
-  [self.statusMenu addItem:self.daemonStatusItem];
-
-  NSMenuItem *restartItem =
-      [[NSMenuItem alloc] initWithTitle:@"Restart Daemon" action:@selector(restartDaemon:) keyEquivalent:@"r"];
-  restartItem.target = self;
-  [self.statusMenu addItem:restartItem];
+  self.runtimeStatusItem =
+      [[NSMenuItem alloc] initWithTitle:self.runtimeHost.statusText action:nil keyEquivalent:@""];
+  self.runtimeStatusItem.enabled = NO;
+  [self.statusMenu addItem:self.runtimeStatusItem];
 
   [self.statusMenu addItem:[NSMenuItem separatorItem]];
 
@@ -61,25 +56,20 @@
   self.statusItem.menu = self.statusMenu;
 
   __weak typeof(self) weakSelf = self;
-  self.daemonSupervisor.statusChangeHandler = ^(NSString *statusText) {
-    weakSelf.daemonStatusItem.title = statusText;
+  self.runtimeHost.statusChangeHandler = ^(NSString *statusText) {
+    weakSelf.runtimeStatusItem.title = statusText;
   };
-  [self.daemonSupervisor start];
+  [self.runtimeHost start];
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
   (void)notification;
-  [self.daemonSupervisor stop];
-}
-
-- (void)restartDaemon:(id)sender {
-  (void)sender;
-  [self.daemonSupervisor restart];
+  [self.runtimeHost stop];
 }
 
 - (void)quit:(id)sender {
   (void)sender;
-  [self.daemonSupervisor stop];
+  [self.runtimeHost stop];
   [NSApp terminate:nil];
 }
 

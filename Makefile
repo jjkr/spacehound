@@ -7,9 +7,8 @@ CONFIGURATION ?= Debug
 DERIVED_DATA_PATH ?= build/DerivedData
 APP_NAME := SpaceRabbit.app
 APP_PATH := $(DERIVED_DATA_PATH)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
-BUNDLED_DAEMON_PATH := $(APP_PATH)/Contents/Helpers/spacerabbitd
 
-.PHONY: help generate build release package-release resolve-daemon-path run open clean distclean app-path bundle-daemon-path daemon-check
+.PHONY: help generate build release package-release run open clean distclean app-path
 
 help:
 	@echo "SpaceRabbit development targets"
@@ -18,21 +17,15 @@ help:
 	@echo "  make build              Build $(SCHEME) ($(CONFIGURATION))"
 	@echo "  make release            Build $(SCHEME) with CONFIGURATION=Release (unsigned)"
 	@echo "  make package-release    Archive, sign, notarize, and package Release artifacts"
-	@echo "  make resolve-daemon-path Print the resolved spacerabbitd path"
 	@echo "  make run                Build and launch the app bundle"
 	@echo "  make open               Launch the existing built app bundle"
 	@echo "  make clean              Remove repo-local build artifacts"
 	@echo "  make distclean          Remove build artifacts and generated Xcode project"
 	@echo "  make app-path           Print the built app path"
-	@echo "  make bundle-daemon-path Print the bundled daemon path"
-	@echo "  make daemon-check       Verify the built app contains spacerabbitd"
 	@echo ""
 	@echo "Overrides:"
 	@echo "  CONFIGURATION=Debug|Release"
 	@echo "  DERIVED_DATA_PATH=build/DerivedData"
-	@echo "  SPACERABBITD_PATH=/path/to/spacerabbitd"
-	@echo "  BUILD_SPACERABBIT_CORE_IF_NEEDED=1"
-	@echo "  SPACERABBIT_CORE_BUILD_COMMAND='...'"
 
 generate: $(PROJECT)
 
@@ -54,9 +47,6 @@ release:
 package-release: generate
 	./scripts/package-release.sh
 
-resolve-daemon-path:
-	./scripts/resolve-daemon.sh
-
 run: build
 	open "$(APP_PATH)"
 
@@ -71,10 +61,3 @@ distclean: clean
 
 app-path:
 	@echo "$(APP_PATH)"
-
-bundle-daemon-path:
-	@echo "$(BUNDLED_DAEMON_PATH)"
-
-daemon-check: build
-	@test -x "$(BUNDLED_DAEMON_PATH)"
-	@echo "Bundled daemon OK: $(BUNDLED_DAEMON_PATH)"

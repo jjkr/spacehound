@@ -18,6 +18,14 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: SpaceRabbitApp/Sources
+      - path: spacerabbit-core/lib/control.cpp
+      - path: spacerabbit-core/lib/daemon.cpp
+      - path: spacerabbit-core/lib/display_switch.cpp
+      - path: spacerabbit-core/lib/ns.mm
+        compilerFlags:
+          - -fno-objc-arc
+      - path: spacerabbit-core/lib/settings.cpp
+      - path: spacerabbit-core/lib/version.cpp
       - path: SpaceRabbitApp/Resources
         buildPhase: resources
     settings:
@@ -26,55 +34,72 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.animaslabs.SpaceRabbit
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
+        CLANG_CXX_LANGUAGE_STANDARD: c++23
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - /System/Library/PrivateFrameworks
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/spacerabbit-core/include
+          - $(SRCROOT)/spacerabbit-core/lib
+          - $(SRCROOT)/third_party
+          - $(DERIVED_FILE_DIR)/spacerabbit-generated/include
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -framework ApplicationServices
+          - -framework Carbon
+          - -framework SkyLight
       configs:
         Release:
           ENABLE_HARDENED_RUNTIME: YES
     preBuildScripts:
-      - name: Copy spacerabbitd
+      - name: Generate spacerabbit version header
         outputFiles:
-          - $(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/spacerabbitd
+          - $(DERIVED_FILE_DIR)/spacerabbit-generated/include/spacerabbit/version.hpp
         script: |
           set -euo pipefail
 
-          resolver_args=()
-          if [[ "${BUILD_SPACERABBIT_CORE_IF_NEEDED:-0}" == "1" ]]; then
-            resolver_args+=(--build-if-needed)
+          generated_dir="${DERIVED_FILE_DIR}/spacerabbit-generated/include/spacerabbit"
+          generated_header_path="${generated_dir}/version.hpp"
+          marketing_version="${MARKETING_VERSION:-0.1.0}"
+
+          major=0
+          minor=0
+          patch=0
+          IFS='.' read -r major minor patch <<< "${marketing_version}"
+          major="${major:-0}"
+          minor="${minor:-0}"
+          patch="${patch:-0}"
+
+          release_build_literal=false
+          if [[ "${CONFIGURATION}" == "Release" ]]; then
+            release_build_literal=true
           fi
 
-          daemon_path="$("${PROJECT_DIR}/scripts/resolve-daemon.sh" "${resolver_args[@]}")"
+          mkdir -p "${generated_dir}"
+          cat > "${generated_header_path}" <<EOF
+          #pragma once
 
-          if [[ -z "${daemon_path}" ]]; then
-            echo "error: spacerabbitd binary not found. Set SPACERABBITD_PATH or make spacerabbit-core available." >&2
-            exit 1
-          fi
+          #include <cstdint>
+          #include <string_view>
 
-          destination_dir="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
-          destination_path="${destination_dir}/spacerabbitd"
-          mkdir -p "${destination_dir}"
-          cp "${daemon_path}" "${destination_path}"
-          chmod 755 "${destination_path}"
+          #include <spacerabbit/export.hpp>
 
-          if [[ "${CODE_SIGNING_ALLOWED:-NO}" == "YES" ]]; then
-            if [[ -z "${EXPANDED_CODE_SIGN_IDENTITY:-}" || "${EXPANDED_CODE_SIGN_IDENTITY}" == "-" ]]; then
-              echo "error: unable to sign spacerabbitd because no expanded code signing identity is available." >&2
-              exit 1
-            fi
+          namespace spacerabbit {
 
-            codesign_args=(
-              --force
-              --sign "${EXPANDED_CODE_SIGN_IDENTITY}"
-              --identifier "${PRODUCT_BUNDLE_IDENTIFIER}.daemon"
-            )
+          inline constexpr std::uint32_t version_major = ${major};
+          inline constexpr std::uint32_t version_minor = ${minor};
+          inline constexpr std::uint32_t version_patch = ${patch};
+          inline constexpr std::string_view version = "${marketing_version}";
+          inline constexpr std::string_view version_build_metadata = "";
+          inline constexpr std::string_view version_full = "${marketing_version}";
+          inline constexpr bool is_release_build = ${release_build_literal};
 
-            if [[ "${ENABLE_HARDENED_RUNTIME:-NO}" == "YES" ]]; then
-              codesign_args+=(
-                --options runtime
-                --timestamp
-              )
-            fi
+          SPACERABBIT_EXPORT auto version_string() noexcept -> std::string_view;
+          SPACERABBIT_EXPORT auto version_full_string() noexcept -> std::string_view;
 
-            codesign "${codesign_args[@]}" "${destination_path}"
-          fi
+          }  // namespace spacerabbit
+          EOF
     info:
       path: SpaceRabbitApp/Info.plist
       properties:
