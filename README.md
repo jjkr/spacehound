@@ -6,85 +6,145 @@
 
 <p align="center">Fast workspace navigation for macOS.</p>
 
+---
+
+SpaceRabbit lives in your menu bar and makes moving between macOS Spaces (desktops)
+and displays instant. Jump straight to a numbered Space, step left or right, move
+focus between windows, or trigger Mission Control — all from the keyboard, without
+waiting on the built-in animations. The menu bar always shows which Space you're on.
+
 ## Install
-Get the latest installer [HERE](https://github.com/animaslabs/spacerabbit/releases/latest).
+
+1. Download the latest DMG from the [**Releases page**](https://github.com/animaslabs/spacerabbit/releases/latest).
+2. Open the DMG and drag **SpaceRabbit** to your Applications folder.
+3. Launch SpaceRabbit. It appears in the menu bar — there is no Dock icon or main
+   window.
+
+**Requirements:** macOS 14 (Sonoma) or newer.
+
+### Grant Accessibility access
+
+SpaceRabbit needs macOS **Accessibility** access to switch Spaces and manage
+windows. On first launch it will ask, and offer to open **System Settings ›
+Privacy & Security › Accessibility** for you — turn on the toggle next to
+SpaceRabbit.
+
+You don't need to relaunch: SpaceRabbit starts working automatically the moment
+access is granted. If you skip the prompt, the menu bar shows a ⚠️ badge and a
+**Grant Accessibility Access…** item you can use later.
+
+macOS may also ask for **Input Monitoring** access (under the same Privacy &
+Security settings) so SpaceRabbit can respond to your keyboard shortcuts. Turn it
+on if prompted.
 
 ## Features
 
-- Fast space switching with hotkeys
-- Menu bar icon with current workspace number
-- More
+- **Instant Space switching** — jump to any of your first 10 Spaces by number, or
+  step left/right, with a keystroke.
+- **Display switching** — move to a specific display or step between displays.
+- **Window focus** — cycle focus to the next or previous window.
+- **System shortcuts** — toggle Mission Control and App Exposé.
+- **Menu bar indicator** — always shows the number of the Space you're currently
+  on.
+- **Scroll to switch** — scroll over the menu bar icon to move between Spaces.
+- **Fully customizable hotkeys** — rebind or disable any shortcut in Settings.
+- **Wrap-around navigation** — optionally loop from the last Space back to the
+  first (and the same for displays).
+
+## The menu bar
+
+The menu bar shows the current Space number (for example, **3**). Click it for the
+menu:
+
+- **Space _X_ of _Y_** — the current status (or a message if access is needed).
+- **Grant Accessibility Access…** — shown only when access hasn't been granted yet.
+- **Settings…** (⌘,) — open the Settings window.
+- **Quit SpaceRabbit** (⌘Q).
+
+## Keyboard shortcuts
+
+Every shortcut below is a default and can be changed or turned off in Settings.
+The default modifier is **⌥ Option** (with **⌃ Control** added for display
+actions).
+
+### Workspace (Spaces)
+
+| Action | Default shortcut |
+| --- | --- |
+| Switch Space Left | ⌥A |
+| Switch Space Right | ⌥D |
+| Switch to Space 1–9 | ⌥1 … ⌥9 |
+| Switch to Space 10 | ⌥0 |
+
+### Display
+
+| Action | Default shortcut |
+| --- | --- |
+| Switch Display Left | ⌥⌃A |
+| Switch Display Right | ⌥⌃D |
+| Switch to Display 1–9 | ⌥⌃1 … ⌥⌃9 |
+| Switch to Display 10 | ⌥⌃0 |
+
+### Window focus
+
+| Action | Default shortcut |
+| --- | --- |
+| Focus Next Window | ⌥Tab |
+| Focus Previous Window | ⌥⇧Tab |
+
+### System
+
+| Action | Default shortcut |
+| --- | --- |
+| Toggle Mission Control | ⌥W |
+| Toggle App Exposé | ⌥E |
+
+## Settings
+
+Open **Settings…** from the menu bar (or press ⌘, while SpaceRabbit is active).
+
+### Hotkeys
+
+Each action has its own row. Click the shortcut field to record a new key
+combination — press the keys you want, or press **Escape** to cancel. Use the ✕
+button to clear a shortcut, or the toggle on the left to turn an action off
+without losing its binding.
+
+### General
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| **Wrap workspace navigation** | Loop back to the first Space after the last (and vice-versa). | Off |
+| **Wrap display navigation** | Loop across the left and right display edges. | Off |
+| **Enable tray scroll switching** | Scroll over the menu bar icon to change Spaces. | On |
+| **Invert tray scroll direction** | Reverse the scroll direction for switching. | Off |
+| **Enable fast swipe** | Trigger swipe actions with a lighter, quicker gesture. | On |
+
+Changes take effect when you press **Save**. **Reload** discards unsaved edits and
+re-reads the file from disk, and **Reveal in Finder** opens the settings file's
+location.
+
+## Where settings are stored
+
+Your configuration lives in a plain JSON file:
+
+```
+~/Library/Application Support/SpaceRabbit/settings.json
+```
+
+SpaceRabbit creates it on first launch. You can edit it by hand if you prefer —
+use **Reveal in Finder** in Settings to find it.
+
+## Uninstall
+
+1. Quit SpaceRabbit from the menu bar.
+2. Move **SpaceRabbit** from Applications to the Trash.
+3. Optionally remove your settings:
+   `~/Library/Application Support/SpaceRabbit/`.
+4. Remove SpaceRabbit from **System Settings › Privacy & Security ›
+   Accessibility** if you like.
 
 ## Development
 
-This repo contains the macOS menu bar app for SpaceRabbit. It now links the `spacerabbit-core`
-runtime directly into the main app process, so there is no separately launched `spacerabbitd`
-helper during normal app runs.
-
-The app build uses the repo-local `spacerabbit-core/` sources directly. The app target compiles the
-core sources into the main app process, generates `spacerabbit/version.hpp` during the build, and
-uses a vendored `nlohmann/json.hpp` header from this repo.
-
-### Prerequisites
-
-- Xcode 26.4 or newer
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.45.3 or newer
-
-### Generate The Project
-
-```sh
-make generate
-```
-
-### Build The App
-
-```sh
-make build
-```
-
-### Run The App
-
-```sh
-make run
-```
-
-The app launches as a menu bar item and can be exited from `Quit SpaceRabbit`.
-
-On first launch the app creates `~/Library/Application Support/SpaceRabbit/settings.json` if it
-does not already exist, then starts the SpaceRabbit runtime in-process with that settings path.
-
-## Distribution
-
-For direct GitHub Releases distribution, ship a signed and notarized DMG as the primary download.
-The repo now includes:
-
-- `scripts/package-release.sh` to archive an arm64-only release build, sign it with Developer ID,
-  notarize a ZIP of the app, staple the app, build a DMG, then notarize and staple the DMG.
-- `.github/workflows/release.yml` to run the same flow on GitHub Actions and attach the DMG, ZIP,
-  and SHA-256 checksums to a release tag.
-
-### Release Secrets
-
-Set these repository secrets for GitHub Actions:
-
-- `BUILD_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
-- `P12_PASSWORD`: password for the `.p12`
-- `BUILD_KEYCHAIN_PASSWORD`: temporary keychain password used during the job
-- `DEVELOPMENT_TEAM`: your Apple Developer Team ID
-- `APPLE_API_KEY_BASE64`: base64-encoded App Store Connect API key `.p8`
-- `APPLE_API_KEY_ID`: App Store Connect key ID
-- `APPLE_API_ISSUER_ID`: App Store Connect issuer ID for team keys
-
-The release app is packaged as a single executable bundle. There is no nested daemon helper to copy
-or sign separately.
-
-### Local Signed Build
-
-```sh
-export DEVELOPMENT_TEAM=YOURTEAMID
-export CODE_SIGN_IDENTITY="Developer ID Application"
-export APPLE_API_KEY_PATH=/absolute/path/to/AuthKey_XXXXXX.p8
-export APPLE_API_KEY_ID=XXXXXX
-export APPLE_API_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-make package-release
-```
+Building from source, architecture notes, and release packaging are documented in
+[DEVELOPMENT.md](DEVELOPMENT.md).
