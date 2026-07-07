@@ -51,8 +51,22 @@ jobs:
             exit 1
           fi
 
-      - name: Install XcodeGen
-        run: brew install xcodegen cmake ninja
+      - name: Install build tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          set -euo pipefail
+          # cmake and ninja are preinstalled on GitHub's macOS runners; only
+          # install what's actually missing and skip brew's slow auto-update.
+          for tool in xcodegen cmake ninja; do
+            if command -v "${tool}" >/dev/null 2>&1; then
+              echo "${tool} already present: $(command -v "${tool}")"
+            else
+              echo "Installing missing tool: ${tool}"
+              brew install "${tool}"
+            fi
+          done
 
       - name: Import Developer ID certificate
         env:
