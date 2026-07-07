@@ -100,18 +100,6 @@ TEST(daemon_tests, resolve_settings_path_uses_default_path_when_override_is_miss
   EXPECT_EQ(*resolved, xdg_dir / "spacerabbit" / "settings.json");
 }
 
-TEST(daemon_tests, settings_errors_map_to_daemon_settings_exit_code) {
-  EXPECT_EQ(
-      detail::map_settings_error(settings::error_code::file_not_found),
-      daemon::exit_code::settings_error);
-  EXPECT_EQ(
-      detail::map_settings_error(settings::error_code::invalid_schema),
-      daemon::exit_code::settings_error);
-  EXPECT_EQ(
-      detail::map_settings_error(settings::error_code::unsupported_version),
-      daemon::exit_code::settings_error);
-}
-
 TEST(daemon_tests, compile_runtime_config_maps_supported_requests_and_inert_actions) {
   settings::document document;
   document.fast_swipe = true;

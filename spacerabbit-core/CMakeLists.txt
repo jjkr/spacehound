@@ -324,44 +324,6 @@ export(
   FILE "${PROJECT_BINARY_DIR}/SpaceRabbitTargets.cmake"
 )
 
-add_executable(
-  spacerabbitd
-  src/spacerabbitd/main.cpp
-)
-target_link_libraries(spacerabbitd PRIVATE spacerabbit_shared)
-target_compile_features(spacerabbitd PRIVATE cxx_std_23)
-set_target_properties(
-  spacerabbitd
-  PROPERTIES
-    CXX_EXTENSIONS OFF
-)
-spacerabbit_apply_warnings(spacerabbitd)
-spacerabbit_enable_coverage(spacerabbitd)
-
-install(
-  TARGETS spacerabbitd
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-add_executable(
-  spacerabbitctl
-  src/spacerabbitctl/main.cpp
-)
-target_link_libraries(spacerabbitctl PRIVATE spacerabbit_shared)
-target_compile_features(spacerabbitctl PRIVATE cxx_std_23)
-set_target_properties(
-  spacerabbitctl
-  PROPERTIES
-    CXX_EXTENSIONS OFF
-)
-spacerabbit_apply_warnings(spacerabbitctl)
-spacerabbit_enable_coverage(spacerabbitctl)
-
-install(
-  TARGETS spacerabbitctl
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
 if(SPACERABBIT_BUILD_EXAMPLES)
   add_executable(
     spacerabbit_smoke_example

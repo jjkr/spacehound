@@ -39,11 +39,6 @@ struct runtime_config final {
 [[nodiscard]] auto resolve_settings_path(const daemon::options &options)
     -> std::expected<std::filesystem::path, settings::error>;
 
-[[nodiscard]] constexpr auto map_settings_error(settings::error_code) noexcept
-    -> daemon::exit_code {
-  return daemon::exit_code::settings_error;
-}
-
 [[nodiscard]] auto compile_runtime_config(const settings::document &document) -> runtime_config;
 
 [[nodiscard]] auto decode_swipe_direction(cg::event_view event, gesture::direction &out_direction)

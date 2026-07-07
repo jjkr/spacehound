@@ -10,14 +10,6 @@
 
 namespace spacerabbit::daemon {
 
-enum class exit_code {
-  success = 0,
-  invalid_usage = 1,
-  settings_error = 2,
-  permission_error = 3,
-  runtime_error = 4,
-};
-
 enum class error_code {
   settings_error,
   permission_denied,
@@ -84,7 +76,5 @@ class SPACERABBIT_EXPORT runtime final {
   class impl;
   std::unique_ptr<impl> impl_{};
 };
-
-[[nodiscard]] SPACERABBIT_EXPORT auto run_foreground(const options &options) -> exit_code;
 
 }  // namespace spacerabbit::daemon

@@ -61,10 +61,6 @@ struct space_bounds final {
   std::int64_t num_spaces = 0;
 };
 
-struct run_loop_stop_context final {
-  CFRunLoopRef run_loop = nullptr;
-};
-
 struct runtime_context final {
   detail::runtime_config config;
   cg::event_tap_view tap{};
@@ -578,38 +574,6 @@ auto compile_fast_swipe_replay(
   return true;
 }
 
-void stop_run_loop_from_signal(void *context_ptr) {
-  const auto *context = static_cast<const run_loop_stop_context *>(context_ptr);
-  if (context == nullptr || context->run_loop == nullptr) {
-    return;
-  }
-
-  CFRunLoopStop(context->run_loop);
-}
-
-auto make_signal_source(int signal_number, run_loop_stop_context *context) -> dispatch_source_t {
-  auto source = dispatch_source_create(
-      DISPATCH_SOURCE_TYPE_SIGNAL,
-      static_cast<uintptr_t>(signal_number),
-      0,
-      dispatch::main_queue());
-  if (source == nullptr) {
-    return nullptr;
-  }
-
-  dispatch_set_context(source, context);
-  dispatch_source_set_event_handler_f(source, &stop_run_loop_from_signal);
-  dispatch_resume(source);
-  return source;
-}
-
-auto setup_signal_sources(run_loop_stop_context *context) -> std::array<dispatch_source_t, 2> {
-  std::signal(SIGINT, SIG_IGN);
-  std::signal(SIGTERM, SIG_IGN);
-
-  return {make_signal_source(SIGINT, context), make_signal_source(SIGTERM, context)};
-}
-
 auto initialize_runtime(
     const detail::runtime_config &config,
     runtime_context &context,
@@ -881,22 +845,6 @@ auto is_synthetic_daemon_event(cg::event_view event) noexcept -> bool {
 
 }  // namespace detail
 
-auto map_runtime_error(const error &error) noexcept -> exit_code {
-  switch (error.code) {
-    case error_code::settings_error:
-      return exit_code::settings_error;
-    case error_code::permission_denied:
-      return exit_code::permission_error;
-    case error_code::state_unavailable:
-    case error_code::runtime_error:
-    case error_code::already_running:
-    case error_code::not_running:
-      return exit_code::runtime_error;
-  }
-
-  return exit_code::runtime_error;
-}
-
 runtime::runtime() noexcept = default;
 
 runtime::runtime(runtime &&other) noexcept = default;
@@ -1020,33 +968,6 @@ void runtime::set_input_suspended(bool suspended) noexcept {
 
 auto runtime::running() const noexcept -> bool {
   return impl_ != nullptr;
-}
-
-auto run_foreground(const options &options) -> exit_code {
-  runtime runtime;
-  const auto started = runtime.start(options);
-  if (!started) {
-    std::cerr << started.error().message << '\n';
-    return map_runtime_error(started.error());
-  }
-
-  run_loop_stop_context stop_context{.run_loop = cf::current_run_loop().get()};
-  const auto signal_sources = setup_signal_sources(&stop_context);
-  if (signal_sources[0] == nullptr || signal_sources[1] == nullptr) {
-    std::cerr << "Failed to install signal handlers for spacerabbitd.\n";
-    return exit_code::runtime_error;
-  }
-
-  const auto settings_path = detail::resolve_settings_path(options);
-  if (!settings_path) {
-    return exit_code::runtime_error;
-  }
-
-  std::cout << "spacerabbitd running with settings " << settings_path->string() << '\n';
-  std::cout.flush();
-  cf::run();
-  runtime.stop();
-  return exit_code::success;
 }
 
 }  // namespace spacerabbit::daemon
