@@ -2,20 +2,453 @@
 
 #import "SRSettingsStore.h"
 
+#pragma mark - Shortcut vocabulary helpers
+
 namespace {
 
-constexpr CGFloat hotkey_action_width = 240.0;
-constexpr CGFloat hotkey_enabled_width = 74.0;
-constexpr CGFloat hotkey_key_width = 90.0;
+constexpr CGFloat kRecorderWidth = 176.0;
+constexpr CGFloat kRecorderHeight = 24.0;
+constexpr CGFloat kRowInsetX = 14.0;
+constexpr CGFloat kRowInsetY = 9.0;
 
-auto make_text_field(NSString *placeholder) -> NSTextField * {
-  NSTextField *field = [[NSTextField alloc] initWithFrame:NSZeroRect];
-  field.translatesAutoresizingMaskIntoConstraints = NO;
-  field.placeholderString = placeholder;
-  return field;
+// Modifier flags -> canonical modifier names in a stable display order
+// (Control, Option, Shift, Command — the native macOS ordering).
+NSArray<NSString *> *SRModifiersFromFlags(NSEventModifierFlags flags) {
+  NSMutableArray<NSString *> *modifiers = [NSMutableArray array];
+  if (flags & NSEventModifierFlagControl) {
+    [modifiers addObject:@"ctrl"];
+  }
+  if (flags & NSEventModifierFlagOption) {
+    [modifiers addObject:@"option"];
+  }
+  if (flags & NSEventModifierFlagShift) {
+    [modifiers addObject:@"shift"];
+  }
+  if (flags & NSEventModifierFlagCommand) {
+    [modifiers addObject:@"cmd"];
+  }
+  return modifiers;
+}
+
+// Parses free-text modifier strings (as persisted on disk) into canonical,
+// de-duplicated, consistently ordered modifier names.
+NSArray<NSString *> *SRParseModifiers(NSString *text) {
+  NSEventModifierFlags flags = 0;
+  NSCharacterSet *separators = [NSCharacterSet characterSetWithCharactersInString:@",+"];
+  for (NSString *raw in [text componentsSeparatedByCharactersInSet:separators]) {
+    NSString *candidate =
+        [[raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    if ([candidate isEqualToString:@"ctrl"] || [candidate isEqualToString:@"control"]) {
+      flags |= NSEventModifierFlagControl;
+    } else if ([candidate isEqualToString:@"option"] || [candidate isEqualToString:@"alt"]) {
+      flags |= NSEventModifierFlagOption;
+    } else if ([candidate isEqualToString:@"cmd"] || [candidate isEqualToString:@"command"] ||
+               [candidate isEqualToString:@"meta"]) {
+      flags |= NSEventModifierFlagCommand;
+    } else if ([candidate isEqualToString:@"shift"]) {
+      flags |= NSEventModifierFlagShift;
+    }
+  }
+  return SRModifiersFromFlags(flags);
+}
+
+NSString *SRSymbolForModifier(NSString *modifier) {
+  if ([modifier isEqualToString:@"ctrl"]) {
+    return @"⌃";  // ⌃
+  }
+  if ([modifier isEqualToString:@"option"]) {
+    return @"⌥";  // ⌥
+  }
+  if ([modifier isEqualToString:@"shift"]) {
+    return @"⇧";  // ⇧
+  }
+  if ([modifier isEqualToString:@"cmd"]) {
+    return @"⌘";  // ⌘
+  }
+  return @"";
+}
+
+// Maps a key event to a canonical key name, or nil for pure-modifier / unmappable
+// events. Special keys are matched by virtual key code (layout independent);
+// letters and digits fall back to the produced characters.
+NSString *SRKeyNameForEvent(NSEvent *event) {
+  switch (event.keyCode) {
+    case 48:
+      return @"Tab";
+    case 49:
+      return @"space";
+    case 36:
+    case 76:
+      return @"return";
+    case 53:
+      return @"escape";
+    case 51:
+    case 117:
+      return @"delete";
+    case 123:
+      return @"left";
+    case 124:
+      return @"right";
+    case 125:
+      return @"down";
+    case 126:
+      return @"up";
+    case 33:
+      return @"[";
+    case 30:
+      return @"]";
+    case 27:
+      return @"-";
+    case 24:
+      return @"=";
+    default:
+      break;
+  }
+
+  NSString *characters = event.charactersIgnoringModifiers;
+  if (characters.length == 0) {
+    return nil;
+  }
+  unichar first = [characters characterAtIndex:0];
+  if (first >= 'a' && first <= 'z') {
+    return [characters substringToIndex:1];
+  }
+  if (first >= 'A' && first <= 'Z') {
+    return [[characters substringToIndex:1] lowercaseString];
+  }
+  if (first >= '0' && first <= '9') {
+    return [characters substringToIndex:1];
+  }
+  if (first == '[' || first == ']' || first == '-' || first == '=') {
+    return [characters substringToIndex:1];
+  }
+  return nil;
+}
+
+NSString *SRGlyphForKey(NSString *key) {
+  if (key.length == 0) {
+    return @"";
+  }
+  static NSDictionary<NSString *, NSString *> *glyphs = nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    glyphs = @{
+      @"tab" : @"⇥",        // ⇥
+      @"space" : @"␣",      // ␣
+      @"return" : @"↩",     // ↩
+      @"enter" : @"↩",      // ↩
+      @"escape" : @"⎋",     // ⎋
+      @"esc" : @"⎋",        // ⎋
+      @"delete" : @"⌫",     // ⌫
+      @"backspace" : @"⌫",  // ⌫
+      @"left" : @"←",       // ←
+      @"right" : @"→",      // →
+      @"up" : @"↑",         // ↑
+      @"down" : @"↓",       // ↓
+    };
+  });
+  NSString *glyph = glyphs[key.lowercaseString];
+  if (glyph != nil) {
+    return glyph;
+  }
+  return key.uppercaseString;
+}
+
+NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
+  NSMutableString *result = [NSMutableString string];
+  for (NSString *modifier in modifiers) {
+    [result appendString:SRSymbolForModifier(modifier)];
+  }
+  [result appendString:SRGlyphForKey(key)];
+  return result;
 }
 
 }  // namespace
+
+#pragma mark - SRCardView
+
+// A rounded, hairline-bordered container that follows the current appearance,
+// used to group related rows the way System Settings does.
+@interface SRCardView : NSView
+@end
+
+@implementation SRCardView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+  self = [super initWithFrame:frameRect];
+  if (self != nil) {
+    self.wantsLayer = YES;
+    self.translatesAutoresizingMaskIntoConstraints = NO;
+  }
+  return self;
+}
+
+- (BOOL)wantsUpdateLayer {
+  return YES;
+}
+
+- (void)updateLayer {
+  __weak SRCardView *weakSelf = self;
+  [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
+    SRCardView *strongSelf = weakSelf;
+    if (strongSelf == nil) {
+      return;
+    }
+    strongSelf.layer.cornerRadius = 10.0;
+    strongSelf.layer.backgroundColor = [NSColor controlBackgroundColor].CGColor;
+    strongSelf.layer.borderColor = [NSColor separatorColor].CGColor;
+    strongSelf.layer.borderWidth = 1.0;
+  }];
+}
+
+- (void)viewDidChangeEffectiveAppearance {
+  [super viewDidChangeEffectiveAppearance];
+  self.needsDisplay = YES;
+}
+
+@end
+
+#pragma mark - SRShortcutRecorderView
+
+// Click-to-record shortcut control. Captures the next key combination the user
+// presses and renders it with native modifier/key glyphs.
+@interface SRShortcutRecorderView : NSView
+
+@property(nonatomic, copy) NSString *keyString;
+@property(nonatomic, copy) NSArray<NSString *> *modifiers;
+@property(nonatomic, assign) BOOL activeAppearance;
+@property(nonatomic, copy) void (^onChange)(void);
+
+- (void)setShortcutKey:(NSString *)key modifiers:(NSArray<NSString *> *)modifiers;
+- (NSString *)modifiersText;
+
+@end
+
+@implementation SRShortcutRecorderView {
+  NSTextField *_label;
+  NSButton *_clearButton;
+  BOOL _recording;
+  NSEventModifierFlags _previewFlags;
+}
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+  self = [super initWithFrame:frameRect];
+  if (self == nil) {
+    return nil;
+  }
+
+  _keyString = @"";
+  _modifiers = @[];
+  _activeAppearance = YES;
+  self.translatesAutoresizingMaskIntoConstraints = NO;
+  self.focusRingType = NSFocusRingTypeNone;
+  self.toolTip = @"Click to record a shortcut";
+
+  _label = [NSTextField labelWithString:@""];
+  _label.translatesAutoresizingMaskIntoConstraints = NO;
+  _label.alignment = NSTextAlignmentCenter;
+  _label.font = [NSFont systemFontOfSize:13.0 weight:NSFontWeightMedium];
+
+  _clearButton = [NSButton buttonWithImage:[self clearImage] target:self action:@selector(clearShortcut:)];
+  _clearButton.translatesAutoresizingMaskIntoConstraints = NO;
+  _clearButton.bordered = NO;
+  _clearButton.bezelStyle = NSBezelStyleRegularSquare;
+  _clearButton.imagePosition = NSImageOnly;
+  _clearButton.contentTintColor = [NSColor tertiaryLabelColor];
+  _clearButton.toolTip = @"Clear shortcut";
+  [_clearButton setButtonType:NSButtonTypeMomentaryChange];
+
+  [self addSubview:_label];
+  [self addSubview:_clearButton];
+
+  [NSLayoutConstraint activateConstraints:@[
+    [self.widthAnchor constraintGreaterThanOrEqualToConstant:kRecorderWidth],
+    [self.heightAnchor constraintEqualToConstant:kRecorderHeight],
+    [_label.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:8.0],
+    [_label.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-8.0],
+    [_label.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+    [_clearButton.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-5.0],
+    [_clearButton.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+    [_clearButton.widthAnchor constraintEqualToConstant:15.0],
+    [_clearButton.heightAnchor constraintEqualToConstant:15.0],
+  ]];
+
+  [self refresh];
+  return self;
+}
+
+- (NSImage *)clearImage {
+  NSImage *image = [NSImage imageWithSystemSymbolName:@"xmark.circle.fill"
+                              accessibilityDescription:@"Clear shortcut"];
+  return image;
+}
+
+- (void)setShortcutKey:(NSString *)key modifiers:(NSArray<NSString *> *)modifiers {
+  _keyString = [key copy] ?: @"";
+  _modifiers = [modifiers copy] ?: @[];
+  [self refresh];
+}
+
+- (void)setActiveAppearance:(BOOL)activeAppearance {
+  _activeAppearance = activeAppearance;
+  [self refresh];
+}
+
+- (NSString *)modifiersText {
+  return [self.modifiers componentsJoinedByString:@", "];
+}
+
+- (BOOL)acceptsFirstResponder {
+  return YES;
+}
+
+- (BOOL)becomeFirstResponder {
+  _recording = YES;
+  _previewFlags = 0;
+  [self refresh];
+  self.needsDisplay = YES;
+  return YES;
+}
+
+- (BOOL)resignFirstResponder {
+  _recording = NO;
+  [self refresh];
+  self.needsDisplay = YES;
+  return YES;
+}
+
+- (void)mouseDown:(NSEvent *)event {
+  (void)event;
+  if (!_recording) {
+    [self.window makeFirstResponder:self];
+  }
+}
+
+- (NSView *)hitTest:(NSPoint)point {
+  NSView *hit = [super hitTest:point];
+  if (hit == nil) {
+    return nil;
+  }
+  if (hit == _clearButton) {
+    return _clearButton;
+  }
+  return self;
+}
+
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+  if (_recording && self.window.firstResponder == self) {
+    if ([self captureEvent:event]) {
+      return YES;
+    }
+  }
+  return [super performKeyEquivalent:event];
+}
+
+- (void)keyDown:(NSEvent *)event {
+  if (_recording) {
+    if ([self captureEvent:event]) {
+      return;
+    }
+  }
+  [super keyDown:event];
+}
+
+- (void)flagsChanged:(NSEvent *)event {
+  if (_recording) {
+    _previewFlags = event.modifierFlags &
+                    (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift |
+                     NSEventModifierFlagCommand);
+    [self refresh];
+    self.needsDisplay = YES;
+  }
+  [super flagsChanged:event];
+}
+
+- (BOOL)captureEvent:(NSEvent *)event {
+  NSEventModifierFlags flags =
+      event.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift |
+                             NSEventModifierFlagCommand);
+
+  // Escape with no modifiers cancels recording without changing the binding.
+  if (event.keyCode == 53 && flags == 0) {
+    [self.window makeFirstResponder:nil];
+    return YES;
+  }
+
+  NSString *keyName = SRKeyNameForEvent(event);
+  if (keyName == nil) {
+    return NO;
+  }
+
+  _keyString = [keyName copy];
+  _modifiers = SRModifiersFromFlags(flags);
+  [self.window makeFirstResponder:nil];
+  [self refresh];
+  self.needsDisplay = YES;
+  if (self.onChange != nil) {
+    self.onChange();
+  }
+  return YES;
+}
+
+- (void)clearShortcut:(id)sender {
+  (void)sender;
+  _keyString = @"";
+  _modifiers = @[];
+  [self refresh];
+  self.needsDisplay = YES;
+  if (self.onChange != nil) {
+    self.onChange();
+  }
+}
+
+- (void)refresh {
+  if (_label == nil) {
+    return;
+  }
+
+  if (_recording) {
+    NSString *preview = SRDisplayString(SRModifiersFromFlags(_previewFlags), @"");
+    _label.stringValue = preview.length > 0 ? [preview stringByAppendingString:@"…"] : @"Type shortcut…";
+    _label.textColor = [NSColor controlAccentColor];
+    _clearButton.hidden = YES;
+  } else if (self.keyString.length > 0) {
+    _label.stringValue = SRDisplayString(self.modifiers, self.keyString);
+    _label.textColor = [NSColor labelColor];
+    _clearButton.hidden = NO;
+  } else {
+    _label.stringValue = @"Record Shortcut";
+    _label.textColor = [NSColor tertiaryLabelColor];
+    _clearButton.hidden = YES;
+  }
+
+  self.alphaValue = _activeAppearance ? 1.0 : 0.45;
+}
+
+- (void)viewDidChangeEffectiveAppearance {
+  [super viewDidChangeEffectiveAppearance];
+  self.needsDisplay = YES;
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+  (void)dirtyRect;
+  NSRect rect = NSInsetRect(self.bounds, 0.75, 0.75);
+  NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:rect xRadius:6.0 yRadius:6.0];
+
+  NSColor *fill = _recording ? [[NSColor controlAccentColor] colorWithAlphaComponent:0.12]
+                             : [NSColor textBackgroundColor];
+  [fill setFill];
+  [path fill];
+
+  path.lineWidth = _recording ? 2.0 : 1.0;
+  NSColor *stroke = _recording ? [NSColor controlAccentColor] : [NSColor separatorColor];
+  [stroke setStroke];
+  [path stroke];
+}
+
+@end
+
+#pragma mark - SRHotkeyRowView
 
 @interface SRHotkeyRowView : NSView
 
@@ -27,9 +460,8 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
 @end
 
 @implementation SRHotkeyRowView {
-  NSButton *_enabledButton;
-  NSTextField *_keyField;
-  NSTextField *_modifiersField;
+  NSSwitch *_enabledSwitch;
+  SRShortcutRecorderView *_recorder;
 }
 
 - (instancetype)initWithHotkeyItem:(SRHotkeyItem *)item {
@@ -43,43 +475,46 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
 
   NSTextField *actionLabel = [NSTextField labelWithString:item.displayName];
   actionLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  actionLabel.font = [NSFont systemFontOfSize:13.0];
   actionLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+  [actionLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                        forOrientation:NSLayoutConstraintOrientationHorizontal];
 
-  _enabledButton = [NSButton checkboxWithTitle:@"" target:nil action:nil];
-  _enabledButton.translatesAutoresizingMaskIntoConstraints = NO;
-  _enabledButton.state = item.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+  _enabledSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+  _enabledSwitch.translatesAutoresizingMaskIntoConstraints = NO;
+  _enabledSwitch.controlSize = NSControlSizeSmall;
+  _enabledSwitch.state = item.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+  _enabledSwitch.target = self;
+  _enabledSwitch.action = @selector(enabledChanged:);
 
-  _keyField = make_text_field(@"a");
-  _keyField.stringValue = item.key ?: @"";
-
-  _modifiersField = make_text_field(@"option, shift");
-  _modifiersField.stringValue = item.modifiersText ?: @"";
+  _recorder = [[SRShortcutRecorderView alloc] initWithFrame:NSZeroRect];
+  [_recorder setShortcutKey:item.key modifiers:SRParseModifiers(item.modifiersText ?: @"")];
+  _recorder.activeAppearance = item.enabled;
 
   [self addSubview:actionLabel];
-  [self addSubview:_enabledButton];
-  [self addSubview:_keyField];
-  [self addSubview:_modifiersField];
+  [self addSubview:_enabledSwitch];
+  [self addSubview:_recorder];
 
   [NSLayoutConstraint activateConstraints:@[
-    [actionLabel.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-    [actionLabel.topAnchor constraintEqualToAnchor:self.topAnchor constant:4.0],
-    [actionLabel.bottomAnchor constraintEqualToAnchor:self.bottomAnchor constant:-4.0],
-    [actionLabel.widthAnchor constraintEqualToConstant:hotkey_action_width],
+    [actionLabel.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:kRowInsetX],
+    [actionLabel.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
 
-    [_enabledButton.leadingAnchor constraintEqualToAnchor:actionLabel.trailingAnchor constant:12.0],
-    [_enabledButton.centerYAnchor constraintEqualToAnchor:actionLabel.centerYAnchor],
-    [_enabledButton.widthAnchor constraintEqualToConstant:hotkey_enabled_width],
+    [_recorder.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-kRowInsetX],
+    [_recorder.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+    [_recorder.topAnchor constraintEqualToAnchor:self.topAnchor constant:kRowInsetY],
+    [_recorder.bottomAnchor constraintEqualToAnchor:self.bottomAnchor constant:-kRowInsetY],
 
-    [_keyField.leadingAnchor constraintEqualToAnchor:_enabledButton.trailingAnchor constant:12.0],
-    [_keyField.centerYAnchor constraintEqualToAnchor:actionLabel.centerYAnchor],
-    [_keyField.widthAnchor constraintEqualToConstant:hotkey_key_width],
-
-    [_modifiersField.leadingAnchor constraintEqualToAnchor:_keyField.trailingAnchor constant:12.0],
-    [_modifiersField.centerYAnchor constraintEqualToAnchor:actionLabel.centerYAnchor],
-    [_modifiersField.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+    [_enabledSwitch.trailingAnchor constraintEqualToAnchor:_recorder.leadingAnchor constant:-14.0],
+    [_enabledSwitch.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+    [_enabledSwitch.leadingAnchor constraintGreaterThanOrEqualToAnchor:actionLabel.trailingAnchor constant:12.0],
   ]];
 
   return self;
+}
+
+- (void)enabledChanged:(id)sender {
+  (void)sender;
+  _recorder.activeAppearance = (_enabledSwitch.state == NSControlStateValueOn);
 }
 
 - (SRHotkeyItem *)currentItem {
@@ -87,39 +522,36 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
   item.actionID = self.item.actionID;
   item.sectionTitle = self.item.sectionTitle;
   item.displayName = self.item.displayName;
-  item.enabled = (_enabledButton.state == NSControlStateValueOn);
-  item.key = _keyField.stringValue ?: @"";
-  item.modifiersText = _modifiersField.stringValue ?: @"";
+  item.enabled = (_enabledSwitch.state == NSControlStateValueOn);
+  item.key = _recorder.keyString ?: @"";
+  item.modifiersText = [_recorder modifiersText];
   return item;
 }
 
 @end
 
+#pragma mark - SRSettingsWindowController
+
 @interface SRSettingsWindowController ()
 
 @property(nonatomic, strong) NSTextField *settingsPathField;
-@property(nonatomic, strong) NSButton *workspaceWrapButton;
-@property(nonatomic, strong) NSButton *displayWrapButton;
-@property(nonatomic, strong) NSButton *trayScrollButton;
-@property(nonatomic, strong) NSButton *trayScrollInvertedButton;
-@property(nonatomic, strong) NSButton *fastSwipeButton;
-@property(nonatomic, strong) NSButton *telemetryButton;
+@property(nonatomic, strong) NSSwitch *workspaceWrapButton;
+@property(nonatomic, strong) NSSwitch *displayWrapButton;
+@property(nonatomic, strong) NSSwitch *trayScrollButton;
+@property(nonatomic, strong) NSSwitch *trayScrollInvertedButton;
+@property(nonatomic, strong) NSView *trayScrollInvertedRow;
+@property(nonatomic, strong) NSSwitch *fastSwipeButton;
+@property(nonatomic, strong) NSSwitch *telemetryButton;
 @property(nonatomic, strong) NSStackView *hotkeysStackView;
 @property(nonatomic, strong) NSTextField *statusLabel;
 @property(nonatomic, copy) NSArray<SRHotkeyRowView *> *hotkeyRowViews;
-
-- (void)reloadFromDisk:(id)sender;
-- (void)saveSettings:(id)sender;
-- (void)revealSettingsFile:(id)sender;
-- (void)presentSettingsError:(NSError *)error;
-- (void)trayScrollChanged:(id)sender;
 
 @end
 
 @implementation SRSettingsWindowController
 
 - (instancetype)init {
-  NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0.0, 0.0, 820.0, 760.0)
+  NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0.0, 0.0, 620.0, 720.0)
                                                  styleMask:(NSWindowStyleMaskTitled |
                                                             NSWindowStyleMaskClosable |
                                                             NSWindowStyleMaskMiniaturizable |
@@ -128,7 +560,7 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
                                                      defer:NO];
   window.title = @"SpaceRabbit Settings";
   window.releasedWhenClosed = NO;
-  window.minSize = NSMakeSize(720.0, 600.0);
+  window.minSize = NSMakeSize(560.0, 560.0);
   window.frameAutosaveName = @"SpaceRabbitSettingsWindow";
 
   self = [super initWithWindow:window];
@@ -155,67 +587,94 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
   rootStack.translatesAutoresizingMaskIntoConstraints = NO;
   rootStack.orientation = NSUserInterfaceLayoutOrientationVertical;
   rootStack.alignment = NSLayoutAttributeLeading;
-  rootStack.spacing = 16.0;
+  rootStack.spacing = 20.0;
 
-  NSTextField *introLabel = [NSTextField labelWithString:
-      @"Edit the same settings.json file the runtime already uses. Unknown JSON fields stay on disk unchanged."];
-  introLabel.translatesAutoresizingMaskIntoConstraints = NO;
-  introLabel.lineBreakMode = NSLineBreakByWordWrapping;
-  introLabel.maximumNumberOfLines = 0;
+  // General section.
+  self.workspaceWrapButton = [self makeSwitch];
+  self.displayWrapButton = [self makeSwitch];
+  self.trayScrollButton = [self makeSwitch];
+  self.trayScrollButton.target = self;
+  self.trayScrollButton.action = @selector(trayScrollChanged:);
+  self.trayScrollInvertedButton = [self makeSwitch];
+  self.fastSwipeButton = [self makeSwitch];
+  self.telemetryButton = [self makeSwitch];
 
-  self.settingsPathField = [NSTextField labelWithString:@""];
-  self.settingsPathField.translatesAutoresizingMaskIntoConstraints = NO;
-  self.settingsPathField.lineBreakMode = NSLineBreakByTruncatingMiddle;
-  self.settingsPathField.allowsExpansionToolTips = YES;
+  self.trayScrollInvertedRow = [self toggleRowForSwitch:self.trayScrollInvertedButton
+                                                  title:@"Invert tray scroll direction"
+                                               subtitle:@"Reverse the scroll direction for switching."];
 
-  NSTextField *generalLabel = [self sectionLabelWithString:@"General"];
+  NSArray<NSView *> *generalRows = @[
+    [self toggleRowForSwitch:self.workspaceWrapButton
+                       title:@"Wrap workspace navigation"
+                    subtitle:@"Loop back to the first workspace after the last."],
+    [self toggleRowForSwitch:self.displayWrapButton
+                       title:@"Wrap display navigation"
+                    subtitle:@"Loop across the left and right display edges."],
+    [self toggleRowForSwitch:self.trayScrollButton
+                       title:@"Enable tray scroll switching"
+                    subtitle:@"Scroll over the menu bar icon to change workspaces."],
+    self.trayScrollInvertedRow,
+    [self toggleRowForSwitch:self.fastSwipeButton
+                       title:@"Enable fast swipe"
+                    subtitle:@"Trigger swipe actions with a lighter, quicker gesture."],
+    [self toggleRowForSwitch:self.telemetryButton
+                       title:@"Enable telemetry"
+                    subtitle:@"Share anonymous usage data to help improve SpaceRabbit."],
+  ];
+  SRCardView *generalCard = [self cardWithRows:generalRows];
 
-  self.workspaceWrapButton = [NSButton checkboxWithTitle:@"Wrap workspace navigation" target:nil action:nil];
-  self.displayWrapButton = [NSButton checkboxWithTitle:@"Wrap display navigation" target:nil action:nil];
-  self.trayScrollButton = [NSButton checkboxWithTitle:@"Enable tray scroll switching" target:self action:@selector(trayScrollChanged:)];
-  self.trayScrollInvertedButton = [NSButton checkboxWithTitle:@"Invert tray scroll direction" target:nil action:nil];
-  self.fastSwipeButton = [NSButton checkboxWithTitle:@"Enable fast swipe" target:nil action:nil];
-  self.telemetryButton = [NSButton checkboxWithTitle:@"Enable telemetry" target:nil action:nil];
-
-  NSStackView *generalStack = [[NSStackView alloc] initWithFrame:NSZeroRect];
-  generalStack.translatesAutoresizingMaskIntoConstraints = NO;
-  generalStack.orientation = NSUserInterfaceLayoutOrientationVertical;
-  generalStack.alignment = NSLayoutAttributeLeading;
-  generalStack.spacing = 8.0;
-  [generalStack addArrangedSubview:self.workspaceWrapButton];
-  [generalStack addArrangedSubview:self.displayWrapButton];
-  [generalStack addArrangedSubview:self.trayScrollButton];
-  [generalStack addArrangedSubview:self.trayScrollInvertedButton];
-  [generalStack addArrangedSubview:self.fastSwipeButton];
-  [generalStack addArrangedSubview:self.telemetryButton];
-
-  NSTextField *hotkeysLabel = [self sectionLabelWithString:@"Hotkeys"];
-  NSTextField *hotkeysHelpLabel = [NSTextField labelWithString:
-      @"Use comma or + separated modifiers, for example option, shift or ctrl+cmd."];
-  hotkeysHelpLabel.translatesAutoresizingMaskIntoConstraints = NO;
-  hotkeysHelpLabel.textColor = [NSColor secondaryLabelColor];
-
-  NSView *headerRow = [self hotkeyHeaderRow];
-
+  // Hotkeys section.
   self.hotkeysStackView = [[NSStackView alloc] initWithFrame:NSZeroRect];
   self.hotkeysStackView.translatesAutoresizingMaskIntoConstraints = NO;
   self.hotkeysStackView.orientation = NSUserInterfaceLayoutOrientationVertical;
   self.hotkeysStackView.alignment = NSLayoutAttributeLeading;
-  self.hotkeysStackView.spacing = 10.0;
+  self.hotkeysStackView.spacing = 0.0;
 
   NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
   scrollView.translatesAutoresizingMaskIntoConstraints = NO;
   scrollView.hasVerticalScroller = YES;
-  scrollView.borderType = NSBezelBorder;
+  scrollView.borderType = NSNoBorder;
+  scrollView.drawsBackground = NO;
   scrollView.documentView = self.hotkeysStackView;
+
+  SRCardView *hotkeysCard = [[SRCardView alloc] initWithFrame:NSZeroRect];
+  [hotkeysCard addSubview:scrollView];
+  [NSLayoutConstraint activateConstraints:@[
+    [scrollView.leadingAnchor constraintEqualToAnchor:hotkeysCard.leadingAnchor constant:1.0],
+    [scrollView.trailingAnchor constraintEqualToAnchor:hotkeysCard.trailingAnchor constant:-1.0],
+    [scrollView.topAnchor constraintEqualToAnchor:hotkeysCard.topAnchor constant:6.0],
+    [scrollView.bottomAnchor constraintEqualToAnchor:hotkeysCard.bottomAnchor constant:-6.0],
+    [self.hotkeysStackView.widthAnchor constraintEqualToAnchor:scrollView.contentView.widthAnchor],
+  ]];
+  [hotkeysCard setContentHuggingPriority:NSLayoutPriorityDefaultLow
+                          forOrientation:NSLayoutConstraintOrientationVertical];
+
+  // Footer.
+  self.settingsPathField = [NSTextField labelWithString:@""];
+  self.settingsPathField.translatesAutoresizingMaskIntoConstraints = NO;
+  self.settingsPathField.font = [NSFont monospacedSystemFontOfSize:10.0 weight:NSFontWeightRegular];
+  self.settingsPathField.textColor = [NSColor tertiaryLabelColor];
+  self.settingsPathField.lineBreakMode = NSLineBreakByTruncatingMiddle;
+  self.settingsPathField.allowsExpansionToolTips = YES;
+  [self.settingsPathField setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow - 1
+                                                   forOrientation:NSLayoutConstraintOrientationHorizontal];
+  [self.settingsPathField setContentHuggingPriority:NSLayoutPriorityDefaultLow
+                                     forOrientation:NSLayoutConstraintOrientationHorizontal];
 
   self.statusLabel = [NSTextField labelWithString:@""];
   self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  self.statusLabel.font = [NSFont systemFontOfSize:11.0];
   self.statusLabel.textColor = [NSColor secondaryLabelColor];
 
-  NSButton *revealButton = [NSButton buttonWithTitle:@"Reveal JSON" target:self action:@selector(revealSettingsFile:)];
-  NSButton *reloadButton = [NSButton buttonWithTitle:@"Reload" target:self action:@selector(reloadFromDisk:)];
-  NSButton *saveButton = [NSButton buttonWithTitle:@"Save" target:self action:@selector(saveSettings:)];
+  NSButton *revealButton = [NSButton buttonWithTitle:@"Reveal in Finder"
+                                              target:self
+                                              action:@selector(revealSettingsFile:)];
+  NSButton *reloadButton = [NSButton buttonWithTitle:@"Reload"
+                                              target:self
+                                              action:@selector(reloadFromDisk:)];
+  NSButton *saveButton = [NSButton buttonWithTitle:@"Save"
+                                            target:self
+                                            action:@selector(saveSettings:)];
   saveButton.keyEquivalent = @"\r";
   saveButton.bezelStyle = NSBezelStyleRounded;
 
@@ -224,90 +683,193 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
   buttonRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
   buttonRow.alignment = NSLayoutAttributeCenterY;
   buttonRow.spacing = 8.0;
+  [buttonRow addArrangedSubview:self.settingsPathField];
+  [buttonRow addArrangedSubview:self.statusLabel];
   [buttonRow addArrangedSubview:revealButton];
   [buttonRow addArrangedSubview:reloadButton];
-  [buttonRow addArrangedSubview:[self flexibleSpacer]];
   [buttonRow addArrangedSubview:saveButton];
 
-  [rootStack addArrangedSubview:introLabel];
-  [rootStack addArrangedSubview:self.settingsPathField];
-  [rootStack addArrangedSubview:generalLabel];
-  [rootStack addArrangedSubview:generalStack];
-  [rootStack addArrangedSubview:hotkeysLabel];
-  [rootStack addArrangedSubview:hotkeysHelpLabel];
-  [rootStack addArrangedSubview:headerRow];
-  [rootStack addArrangedSubview:scrollView];
-  [rootStack addArrangedSubview:self.statusLabel];
+  // Assemble.
+  NSView *generalHeader = [self groupHeaderTitle:@"General" subtitle:nil];
+  NSView *hotkeysHeader = [self groupHeaderTitle:@"Hotkeys"
+                                        subtitle:@"Click a shortcut to record a new combination. Turn a row off to disable it."];
+
+  [rootStack addArrangedSubview:generalHeader];
+  [rootStack addArrangedSubview:generalCard];
+  [rootStack addArrangedSubview:hotkeysHeader];
+  [rootStack addArrangedSubview:hotkeysCard];
   [rootStack addArrangedSubview:buttonRow];
+
+  for (NSView *view in @[ generalHeader, generalCard, hotkeysHeader, hotkeysCard, buttonRow ]) {
+    [view.widthAnchor constraintEqualToAnchor:rootStack.widthAnchor].active = YES;
+  }
+  [rootStack setCustomSpacing:8.0 afterView:generalHeader];
+  [rootStack setCustomSpacing:8.0 afterView:hotkeysHeader];
 
   [contentView addSubview:rootStack];
 
   [NSLayoutConstraint activateConstraints:@[
-    [rootStack.leadingAnchor constraintEqualToAnchor:contentView.leadingAnchor constant:20.0],
-    [rootStack.trailingAnchor constraintEqualToAnchor:contentView.trailingAnchor constant:-20.0],
-    [rootStack.topAnchor constraintEqualToAnchor:contentView.topAnchor constant:20.0],
+    [rootStack.leadingAnchor constraintEqualToAnchor:contentView.leadingAnchor constant:24.0],
+    [rootStack.trailingAnchor constraintEqualToAnchor:contentView.trailingAnchor constant:-24.0],
+    [rootStack.topAnchor constraintEqualToAnchor:contentView.topAnchor constant:24.0],
     [rootStack.bottomAnchor constraintEqualToAnchor:contentView.bottomAnchor constant:-20.0],
-    [scrollView.heightAnchor constraintGreaterThanOrEqualToConstant:300.0],
-    [self.hotkeysStackView.widthAnchor constraintEqualToAnchor:scrollView.contentView.widthAnchor],
+    [hotkeysCard.heightAnchor constraintGreaterThanOrEqualToConstant:280.0],
   ]];
 }
 
-- (NSTextField *)sectionLabelWithString:(NSString *)stringValue {
-  NSTextField *label = [NSTextField labelWithString:stringValue];
-  label.translatesAutoresizingMaskIntoConstraints = NO;
-  label.font = [NSFont boldSystemFontOfSize:13.0];
-  return label;
+#pragma mark - Building blocks
+
+- (NSSwitch *)makeSwitch {
+  NSSwitch *toggle = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+  toggle.translatesAutoresizingMaskIntoConstraints = NO;
+  return toggle;
 }
 
-- (NSView *)hotkeyHeaderRow {
-  NSView *header = [[NSView alloc] initWithFrame:NSZeroRect];
-  header.translatesAutoresizingMaskIntoConstraints = NO;
+- (NSView *)groupHeaderTitle:(NSString *)title subtitle:(NSString *)subtitle {
+  NSStackView *stack = [[NSStackView alloc] initWithFrame:NSZeroRect];
+  stack.translatesAutoresizingMaskIntoConstraints = NO;
+  stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+  stack.alignment = NSLayoutAttributeLeading;
+  stack.spacing = 3.0;
 
-  NSTextField *actionLabel = [NSTextField labelWithString:@"Action"];
-  NSTextField *enabledLabel = [NSTextField labelWithString:@"Enabled"];
-  NSTextField *keyLabel = [NSTextField labelWithString:@"Key"];
-  NSTextField *modifiersLabel = [NSTextField labelWithString:@"Modifiers"];
+  NSTextField *titleLabel = [NSTextField labelWithString:title];
+  titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  titleLabel.font = [NSFont systemFontOfSize:15.0 weight:NSFontWeightSemibold];
+  [stack addArrangedSubview:titleLabel];
 
-  for (NSTextField *label in @[actionLabel, enabledLabel, keyLabel, modifiersLabel]) {
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    label.font = [NSFont boldSystemFontOfSize:12.0];
-    [header addSubview:label];
+  if (subtitle.length > 0) {
+    NSTextField *subtitleLabel = [NSTextField labelWithString:subtitle];
+    subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    subtitleLabel.font = [NSFont systemFontOfSize:11.0];
+    subtitleLabel.textColor = [NSColor secondaryLabelColor];
+    subtitleLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    subtitleLabel.maximumNumberOfLines = 0;
+    [stack addArrangedSubview:subtitleLabel];
+    [subtitleLabel.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
   }
 
-  [NSLayoutConstraint activateConstraints:@[
-    [actionLabel.leadingAnchor constraintEqualToAnchor:header.leadingAnchor],
-    [actionLabel.topAnchor constraintEqualToAnchor:header.topAnchor],
-    [actionLabel.bottomAnchor constraintEqualToAnchor:header.bottomAnchor],
-    [actionLabel.widthAnchor constraintEqualToConstant:hotkey_action_width],
+  return stack;
+}
 
-    [enabledLabel.leadingAnchor constraintEqualToAnchor:actionLabel.trailingAnchor constant:12.0],
-    [enabledLabel.topAnchor constraintEqualToAnchor:header.topAnchor],
-    [enabledLabel.bottomAnchor constraintEqualToAnchor:header.bottomAnchor],
-    [enabledLabel.widthAnchor constraintEqualToConstant:hotkey_enabled_width],
+- (NSView *)toggleRowForSwitch:(NSSwitch *)toggle title:(NSString *)title subtitle:(NSString *)subtitle {
+  NSView *row = [[NSView alloc] initWithFrame:NSZeroRect];
+  row.translatesAutoresizingMaskIntoConstraints = NO;
 
-    [keyLabel.leadingAnchor constraintEqualToAnchor:enabledLabel.trailingAnchor constant:12.0],
-    [keyLabel.topAnchor constraintEqualToAnchor:header.topAnchor],
-    [keyLabel.bottomAnchor constraintEqualToAnchor:header.bottomAnchor],
-    [keyLabel.widthAnchor constraintEqualToConstant:hotkey_key_width],
+  NSTextField *titleLabel = [NSTextField labelWithString:title];
+  titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  titleLabel.font = [NSFont systemFontOfSize:13.0];
+  [titleLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                       forOrientation:NSLayoutConstraintOrientationHorizontal];
 
-    [modifiersLabel.leadingAnchor constraintEqualToAnchor:keyLabel.trailingAnchor constant:12.0],
-    [modifiersLabel.topAnchor constraintEqualToAnchor:header.topAnchor],
-    [modifiersLabel.bottomAnchor constraintEqualToAnchor:header.bottomAnchor],
-    [modifiersLabel.trailingAnchor constraintEqualToAnchor:header.trailingAnchor],
+  [row addSubview:titleLabel];
+  [row addSubview:toggle];
+
+  NSTextField *subtitleLabel = nil;
+  if (subtitle.length > 0) {
+    subtitleLabel = [NSTextField labelWithString:subtitle];
+    subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    subtitleLabel.font = [NSFont systemFontOfSize:11.0];
+    subtitleLabel.textColor = [NSColor secondaryLabelColor];
+    subtitleLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    subtitleLabel.maximumNumberOfLines = 0;
+    [subtitleLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                            forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [row addSubview:subtitleLabel];
+  }
+
+  NSMutableArray<NSLayoutConstraint *> *constraints = [NSMutableArray array];
+  [constraints addObjectsFromArray:@[
+    [titleLabel.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:kRowInsetX],
+    [titleLabel.topAnchor constraintEqualToAnchor:row.topAnchor constant:kRowInsetY],
+    [toggle.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-kRowInsetX],
+    [toggle.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+    [toggle.leadingAnchor constraintGreaterThanOrEqualToAnchor:titleLabel.trailingAnchor constant:12.0],
   ]];
 
-  return header;
+  if (subtitleLabel != nil) {
+    [constraints addObjectsFromArray:@[
+      [subtitleLabel.leadingAnchor constraintEqualToAnchor:titleLabel.leadingAnchor],
+      [subtitleLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:2.0],
+      [subtitleLabel.bottomAnchor constraintEqualToAnchor:row.bottomAnchor constant:-kRowInsetY],
+      [subtitleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:toggle.leadingAnchor constant:-12.0],
+    ]];
+  } else {
+    [constraints addObject:[titleLabel.bottomAnchor constraintEqualToAnchor:row.bottomAnchor constant:-kRowInsetY]];
+  }
+
+  [NSLayoutConstraint activateConstraints:constraints];
+  return row;
 }
 
-- (NSView *)flexibleSpacer {
-  NSView *spacer = [[NSView alloc] initWithFrame:NSZeroRect];
-  spacer.translatesAutoresizingMaskIntoConstraints = NO;
-  [spacer.widthAnchor constraintGreaterThanOrEqualToConstant:12.0].active = YES;
-  [spacer setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
-  [spacer setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
-                                   forOrientation:NSLayoutConstraintOrientationHorizontal];
-  return spacer;
+- (NSView *)separatorLine {
+  NSBox *box = [[NSBox alloc] initWithFrame:NSZeroRect];
+  box.boxType = NSBoxSeparator;
+  box.translatesAutoresizingMaskIntoConstraints = NO;
+  [box.heightAnchor constraintEqualToConstant:1.0].active = YES;
+  return box;
 }
+
+- (SRCardView *)cardWithRows:(NSArray<NSView *> *)rows {
+  SRCardView *card = [[SRCardView alloc] initWithFrame:NSZeroRect];
+
+  NSStackView *stack = [[NSStackView alloc] initWithFrame:NSZeroRect];
+  stack.translatesAutoresizingMaskIntoConstraints = NO;
+  stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+  stack.alignment = NSLayoutAttributeLeading;
+  stack.spacing = 0.0;
+
+  NSMutableArray<NSView *> *fullWidthViews = [NSMutableArray array];
+  for (NSUInteger index = 0; index < rows.count; index++) {
+    if (index > 0) {
+      NSView *separator = [self separatorLine];
+      [stack addArrangedSubview:separator];
+      [fullWidthViews addObject:separator];
+    }
+    [stack addArrangedSubview:rows[index]];
+    [fullWidthViews addObject:rows[index]];
+  }
+
+  [card addSubview:stack];
+  [NSLayoutConstraint activateConstraints:@[
+    [stack.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+    [stack.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
+    [stack.topAnchor constraintEqualToAnchor:card.topAnchor],
+    [stack.bottomAnchor constraintEqualToAnchor:card.bottomAnchor],
+  ]];
+
+  for (NSView *view in fullWidthViews) {
+    [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+  }
+
+  return card;
+}
+
+- (NSView *)hotkeySectionHeaderWithTitle:(NSString *)title topSeparator:(BOOL)topSeparator {
+  NSView *row = [[NSView alloc] initWithFrame:NSZeroRect];
+  row.translatesAutoresizingMaskIntoConstraints = NO;
+
+  NSTextField *label = [NSTextField labelWithString:title.uppercaseString];
+  label.translatesAutoresizingMaskIntoConstraints = NO;
+  label.font = [NSFont systemFontOfSize:11.0 weight:NSFontWeightSemibold];
+  label.textColor = [NSColor secondaryLabelColor];
+  [row addSubview:label];
+
+  [NSLayoutConstraint activateConstraints:@[
+    [label.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:kRowInsetX],
+    [label.topAnchor constraintEqualToAnchor:row.topAnchor constant:topSeparator ? 14.0 : 12.0],
+    [label.bottomAnchor constraintEqualToAnchor:row.bottomAnchor constant:-6.0],
+    [label.trailingAnchor constraintLessThanOrEqualToAnchor:row.trailingAnchor constant:-kRowInsetX],
+  ]];
+
+  return row;
+}
+
+- (void)addFullWidthArrangedView:(NSView *)view {
+  [self.hotkeysStackView addArrangedSubview:view];
+  [view.widthAnchor constraintEqualToAnchor:self.hotkeysStackView.widthAnchor].active = YES;
+}
+
+#pragma mark - Actions
 
 - (void)reloadFromDisk:(id)sender {
   (void)sender;
@@ -364,7 +926,7 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
   if (self.applyHandler != nil) {
     NSError *applyError = nil;
     if (!self.applyHandler(&applyError)) {
-      self.statusLabel.stringValue = @"Saved to disk, but the running runtime could not apply the update.";
+      self.statusLabel.stringValue = @"Saved to disk, but the runtime could not apply the update.";
       if (applyError != nil) {
         [self presentSettingsError:applyError];
       }
@@ -394,6 +956,7 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
   (void)sender;
   BOOL trayScrollEnabled = (self.trayScrollButton.state == NSControlStateValueOn);
   self.trayScrollInvertedButton.enabled = trayScrollEnabled;
+  self.trayScrollInvertedRow.alphaValue = trayScrollEnabled ? 1.0 : 0.45;
   if (!trayScrollEnabled) {
     self.trayScrollInvertedButton.state = NSControlStateValueOff;
   }
@@ -416,17 +979,20 @@ auto make_text_field(NSString *placeholder) -> NSTextField * {
 
   NSMutableArray<SRHotkeyRowView *> *rowViews = [NSMutableArray arrayWithCapacity:document.hotkeys.count];
   NSString *currentSection = nil;
+  BOOL isFirstRow = YES;
   for (SRHotkeyItem *item in document.hotkeys) {
     if (![currentSection isEqualToString:item.sectionTitle]) {
       currentSection = item.sectionTitle;
-      NSTextField *sectionLabel = [self sectionLabelWithString:currentSection];
-      sectionLabel.font = [NSFont systemFontOfSize:12.0 weight:NSFontWeightSemibold];
-      [self.hotkeysStackView addArrangedSubview:sectionLabel];
+      [self addFullWidthArrangedView:[self hotkeySectionHeaderWithTitle:currentSection
+                                                           topSeparator:!isFirstRow]];
+    } else {
+      [self addFullWidthArrangedView:[self separatorLine]];
     }
 
     SRHotkeyRowView *rowView = [[SRHotkeyRowView alloc] initWithHotkeyItem:item];
     [rowViews addObject:rowView];
-    [self.hotkeysStackView addArrangedSubview:rowView];
+    [self addFullWidthArrangedView:rowView];
+    isFirstRow = NO;
   }
 
   self.hotkeyRowViews = [rowViews copy];

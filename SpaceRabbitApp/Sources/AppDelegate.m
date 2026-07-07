@@ -71,6 +71,10 @@
   };
 
   [self.runtimeHost start];
+
+  if (NSProcessInfo.processInfo.environment[@"SR_OPEN_SETTINGS"] != nil) {
+    [self.settingsWindowController showWindowAndActivate];
+  }
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
