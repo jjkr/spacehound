@@ -184,7 +184,10 @@
 }
 
 - (void)beginRequestingAccessibilityAccess {
-  [SRPermissions requestAccessibilityAccess];
+  // Open System Settings directly rather than calling the AX "prompt" API — the
+  // latter triggers a second, redundant macOS dialog on top of our own. The app
+  // is already registered in the Accessibility list by our AXIsProcessTrusted()
+  // checks, so it appears in the list ready to toggle.
   [SRPermissions openAccessibilitySettings];
   [self startAccessibilityPolling];
 }
