@@ -658,31 +658,22 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   ];
   SRCardView *generalCard = [self cardWithRows:generalRows];
 
-  // Hotkeys section.
+  // Hotkeys section. The stack lives directly inside the card now; the whole
+  // window scrolls rather than the hotkey list scrolling on its own.
   self.hotkeysStackView = [[NSStackView alloc] initWithFrame:NSZeroRect];
   self.hotkeysStackView.translatesAutoresizingMaskIntoConstraints = NO;
   self.hotkeysStackView.orientation = NSUserInterfaceLayoutOrientationVertical;
   self.hotkeysStackView.alignment = NSLayoutAttributeLeading;
   self.hotkeysStackView.spacing = 0.0;
 
-  NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-  scrollView.translatesAutoresizingMaskIntoConstraints = NO;
-  scrollView.hasVerticalScroller = YES;
-  scrollView.borderType = NSNoBorder;
-  scrollView.drawsBackground = NO;
-  scrollView.documentView = self.hotkeysStackView;
-
   SRCardView *hotkeysCard = [[SRCardView alloc] initWithFrame:NSZeroRect];
-  [hotkeysCard addSubview:scrollView];
+  [hotkeysCard addSubview:self.hotkeysStackView];
   [NSLayoutConstraint activateConstraints:@[
-    [scrollView.leadingAnchor constraintEqualToAnchor:hotkeysCard.leadingAnchor constant:1.0],
-    [scrollView.trailingAnchor constraintEqualToAnchor:hotkeysCard.trailingAnchor constant:-1.0],
-    [scrollView.topAnchor constraintEqualToAnchor:hotkeysCard.topAnchor constant:6.0],
-    [scrollView.bottomAnchor constraintEqualToAnchor:hotkeysCard.bottomAnchor constant:-6.0],
-    [self.hotkeysStackView.widthAnchor constraintEqualToAnchor:scrollView.contentView.widthAnchor],
+    [self.hotkeysStackView.leadingAnchor constraintEqualToAnchor:hotkeysCard.leadingAnchor constant:1.0],
+    [self.hotkeysStackView.trailingAnchor constraintEqualToAnchor:hotkeysCard.trailingAnchor constant:-1.0],
+    [self.hotkeysStackView.topAnchor constraintEqualToAnchor:hotkeysCard.topAnchor constant:6.0],
+    [self.hotkeysStackView.bottomAnchor constraintEqualToAnchor:hotkeysCard.bottomAnchor constant:-6.0],
   ]];
-  [hotkeysCard setContentHuggingPriority:NSLayoutPriorityDefaultLow
-                          forOrientation:NSLayoutConstraintOrientationVertical];
 
   // Footer.
   self.settingsPathField = [NSTextField labelWithString:@""];
@@ -724,31 +715,63 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [buttonRow addArrangedSubview:reloadButton];
   [buttonRow addArrangedSubview:saveButton];
 
-  // Assemble.
+  // Assemble. Hotkeys come first, general settings last; the footer stays
+  // pinned while everything above it scrolls as one document.
   NSView *generalHeader = [self groupHeaderTitle:@"General" subtitle:nil];
   NSView *hotkeysHeader = [self groupHeaderTitle:@"Hotkeys"
                                         subtitle:@"Click a shortcut to record a new combination. Turn a row off to disable it."];
 
-  [rootStack addArrangedSubview:generalHeader];
-  [rootStack addArrangedSubview:generalCard];
   [rootStack addArrangedSubview:hotkeysHeader];
   [rootStack addArrangedSubview:hotkeysCard];
-  [rootStack addArrangedSubview:buttonRow];
+  [rootStack addArrangedSubview:generalHeader];
+  [rootStack addArrangedSubview:generalCard];
 
-  for (NSView *view in @[ generalHeader, generalCard, hotkeysHeader, hotkeysCard, buttonRow ]) {
+  for (NSView *view in @[ hotkeysHeader, hotkeysCard, generalHeader, generalCard ]) {
     [view.widthAnchor constraintEqualToAnchor:rootStack.widthAnchor].active = YES;
   }
-  [rootStack setCustomSpacing:8.0 afterView:generalHeader];
   [rootStack setCustomSpacing:8.0 afterView:hotkeysHeader];
+  [rootStack setCustomSpacing:8.0 afterView:generalHeader];
 
-  [contentView addSubview:rootStack];
+  // A plain container is the document view so it fills the full viewport width
+  // (the clip view pins its document to the origin, so insetting the document
+  // itself would just left-align it). The horizontal margin lives on the stack
+  // inside the container instead, which insets reliably and keeps the scroller —
+  // sitting at the window edge — clear of the cards.
+  NSView *documentView = [[NSView alloc] initWithFrame:NSZeroRect];
+  documentView.translatesAutoresizingMaskIntoConstraints = NO;
+  [documentView addSubview:rootStack];
+
+  NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+  scrollView.translatesAutoresizingMaskIntoConstraints = NO;
+  scrollView.hasVerticalScroller = YES;
+  scrollView.borderType = NSNoBorder;
+  scrollView.drawsBackground = NO;
+  scrollView.documentView = documentView;
+
+  [contentView addSubview:scrollView];
+  [contentView addSubview:buttonRow];
 
   [NSLayoutConstraint activateConstraints:@[
-    [rootStack.leadingAnchor constraintEqualToAnchor:contentView.leadingAnchor constant:24.0],
-    [rootStack.trailingAnchor constraintEqualToAnchor:contentView.trailingAnchor constant:-24.0],
-    [rootStack.topAnchor constraintEqualToAnchor:contentView.topAnchor constant:24.0],
-    [rootStack.bottomAnchor constraintEqualToAnchor:contentView.bottomAnchor constant:-20.0],
-    [hotkeysCard.heightAnchor constraintGreaterThanOrEqualToConstant:280.0],
+    // Container fills the viewport width; the stack's height drives the scroll
+    // length, and the stack sits inset by an equal margin on each side.
+    [documentView.topAnchor constraintEqualToAnchor:scrollView.contentView.topAnchor],
+    [documentView.leadingAnchor constraintEqualToAnchor:scrollView.contentView.leadingAnchor],
+    [documentView.trailingAnchor constraintEqualToAnchor:scrollView.contentView.trailingAnchor],
+    [documentView.widthAnchor constraintEqualToAnchor:scrollView.contentView.widthAnchor],
+
+    [rootStack.topAnchor constraintEqualToAnchor:documentView.topAnchor],
+    [rootStack.bottomAnchor constraintEqualToAnchor:documentView.bottomAnchor],
+    [rootStack.leadingAnchor constraintEqualToAnchor:documentView.leadingAnchor constant:24.0],
+    [rootStack.trailingAnchor constraintEqualToAnchor:documentView.trailingAnchor constant:-24.0],
+
+    [scrollView.topAnchor constraintEqualToAnchor:contentView.topAnchor constant:24.0],
+    [scrollView.leadingAnchor constraintEqualToAnchor:contentView.leadingAnchor],
+    [scrollView.trailingAnchor constraintEqualToAnchor:contentView.trailingAnchor],
+
+    [buttonRow.topAnchor constraintEqualToAnchor:scrollView.bottomAnchor constant:16.0],
+    [buttonRow.leadingAnchor constraintEqualToAnchor:contentView.leadingAnchor constant:24.0],
+    [buttonRow.trailingAnchor constraintEqualToAnchor:contentView.trailingAnchor constant:-24.0],
+    [buttonRow.bottomAnchor constraintEqualToAnchor:contentView.bottomAnchor constant:-20.0],
   ]];
 
   // Keep the window from opening with a shortcut recorder focused.
