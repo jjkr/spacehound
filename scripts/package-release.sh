@@ -92,7 +92,8 @@ xcodebuild \
   -derivedDataPath "${DERIVED_DATA_PATH}" \
   -archivePath "${ARCHIVE_PATH}" \
   -destination "generic/platform=macOS" \
-  -arch arm64 \
+  ARCHS=arm64 \
+  ONLY_ACTIVE_ARCH=NO \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
