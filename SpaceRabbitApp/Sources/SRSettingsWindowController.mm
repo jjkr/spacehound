@@ -597,6 +597,13 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
   window.delegate = self;
   [self buildInterface];
+
+  // The content rect is anchored at the screen origin (bottom-left). Center the
+  // window on first launch; a previously saved autosave frame, if any, wins.
+  if (![window setFrameUsingName:window.frameAutosaveName]) {
+    [window center];
+  }
+
   return self;
 }
 
