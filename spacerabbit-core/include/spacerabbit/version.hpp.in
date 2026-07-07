@@ -1,0 +1,31 @@
+#pragma once
+
+#include <cstdint>
+#include <string_view>
+
+#include <spacerabbit/export.hpp>
+
+namespace spacerabbit {
+
+/// Major component of the library semantic version.
+inline constexpr std::uint32_t version_major = @PROJECT_VERSION_MAJOR@;
+/// Minor component of the library semantic version.
+inline constexpr std::uint32_t version_minor = @PROJECT_VERSION_MINOR@;
+/// Patch component of the library semantic version.
+inline constexpr std::uint32_t version_patch = @PROJECT_VERSION_PATCH@;
+
+/// Canonical semantic version shared by the public API and package metadata.
+inline constexpr std::string_view version = "@PROJECT_VERSION@";
+/// Optional build metadata for development builds, empty for tagged clean releases.
+inline constexpr std::string_view version_build_metadata = "@SPACERABBIT_VERSION_BUILD_METADATA@";
+/// Full version string, including build metadata when available.
+inline constexpr std::string_view version_full = "@SPACERABBIT_VERSION_FULL@";
+/// Indicates whether this build came from a clean tag matching the project version.
+inline constexpr bool is_release_build = @SPACERABBIT_VERSION_IS_RELEASE_BUILD_LITERAL@;
+
+/// Returns the canonical semantic version string.
+SPACERABBIT_EXPORT auto version_string() noexcept -> std::string_view;
+/// Returns the semantic version plus optional development build metadata.
+SPACERABBIT_EXPORT auto version_full_string() noexcept -> std::string_view;
+
+}  // namespace spacerabbit

@@ -21,9 +21,9 @@ This repo contains the macOS menu bar app for SpaceRabbit. It now links the `spa
 runtime directly into the main app process, so there is no separately launched `spacerabbitd`
 helper during normal app runs.
 
-The app build expects a repo-local `spacerabbit-core/` checkout or submodule. The app target
-compiles the core sources directly, generates `spacerabbit/version.hpp` during the build, and uses a
-vendored `nlohmann/json.hpp` header from this repo.
+The app build uses the repo-local `spacerabbit-core/` sources directly. The app target compiles the
+core sources into the main app process, generates `spacerabbit/version.hpp` during the build, and
+uses a vendored `nlohmann/json.hpp` header from this repo.
 
 ### Prerequisites
 
@@ -67,7 +67,6 @@ The repo now includes:
 
 Set these repository secrets for GitHub Actions:
 
-- `SUBMODULE_SSH_KEY`: SSH private key with read access to `animaslabs/spacerabbit-core`
 - `BUILD_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
 - `P12_PASSWORD`: password for the `.p12`
 - `BUILD_KEYCHAIN_PASSWORD`: temporary keychain password used during the job

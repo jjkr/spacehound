@@ -25,9 +25,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          ssh-key: ${{ secrets.SUBMODULE_SSH_KEY }}
 
       - name: Validate release configuration
         run: |
@@ -50,7 +47,7 @@ jobs:
           done
 
           if [[ ! -d spacerabbit-core ]]; then
-            echo "::error::Expected spacerabbit-core/ submodule checkout in this repository."
+            echo "::error::Expected spacerabbit-core/ sources in this repository."
             exit 1
           fi
 
