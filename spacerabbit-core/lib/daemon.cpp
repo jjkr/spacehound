@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <charconv>
 #include <cctype>
 #include <csignal>
@@ -68,6 +69,10 @@ struct runtime_context final {
   detail::runtime_config config;
   cg::event_tap_view tap{};
   cg::event_source synthetic_source{};
+  // When set, the event tap stays installed but passes every event through
+  // untouched, so a shortcut editor can capture combinations that would
+  // otherwise trigger a hotkey or gesture.
+  std::atomic<bool> input_suspended{false};
 };
 
 auto make_error(error_code code, std::string message) -> error {
@@ -643,6 +648,12 @@ auto initialize_runtime(
               return event_ref;
             }
 
+            // While a shortcut is being recorded, pass everything through so the
+            // editor receives the keystroke instead of the runtime acting on it.
+            if (context->input_suspended.load(std::memory_order_relaxed)) {
+              return event_ref;
+            }
+
             if (type == cg::gesture_event_type) {
               if (!context->config.fast_swipe || detail::is_synthetic_daemon_event(event)) {
                 return event_ref;
@@ -996,6 +1007,14 @@ auto runtime::current_workspace_state() const -> std::expected<workspace_state, 
   }
 
   return read_workspace_state();
+}
+
+void runtime::set_input_suspended(bool suspended) noexcept {
+  if (!impl_) {
+    return;
+  }
+
+  impl_->context.input_suspended.store(suspended, std::memory_order_relaxed);
 }
 
 auto runtime::running() const noexcept -> bool {

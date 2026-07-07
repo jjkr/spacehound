@@ -105,6 +105,10 @@ static void SRRuntimeHostActiveSpaceChanged(
   return YES;
 }
 
+- (void)setInputSuspended:(BOOL)suspended {
+  _runtime.set_input_suspended(suspended ? true : false);
+}
+
 - (void)handleWorkspaceStateChangeWithCurrentSpace:(NSUInteger)currentSpace
                                          numSpaces:(NSUInteger)numSpaces {
   if (currentSpace == 0 || numSpaces == 0) {

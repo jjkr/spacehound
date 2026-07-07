@@ -69,12 +69,11 @@
   self.settingsWindowController.applyHandler = ^BOOL(NSError **error) {
     return [weakWindowSelf.runtimeHost applySettings:error];
   };
+  self.settingsWindowController.inputSuspensionHandler = ^(BOOL suspended) {
+    [weakWindowSelf.runtimeHost setInputSuspended:suspended];
+  };
 
   [self.runtimeHost start];
-
-  if (NSProcessInfo.processInfo.environment[@"SR_OPEN_SETTINGS"] != nil) {
-    [self.settingsWindowController showWindowAndActivate];
-  }
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {

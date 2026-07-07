@@ -218,6 +218,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 @property(nonatomic, copy) NSArray<NSString *> *modifiers;
 @property(nonatomic, assign) BOOL activeAppearance;
 @property(nonatomic, copy) void (^onChange)(void);
+@property(nonatomic, copy) void (^onRecordingChanged)(BOOL recording);
 
 - (void)setShortcutKey:(NSString *)key modifiers:(NSArray<NSString *> *)modifiers;
 - (NSString *)modifiersText;
@@ -302,25 +303,43 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   return YES;
 }
 
+// Focus alone must not start recording — otherwise the window picks the first
+// recorder as its initial first responder and it opens mid-capture. Recording
+// begins only on an explicit click (or ends when focus is lost).
 - (BOOL)becomeFirstResponder {
-  _recording = YES;
-  _previewFlags = 0;
-  [self refresh];
-  self.needsDisplay = YES;
   return YES;
 }
 
 - (BOOL)resignFirstResponder {
-  _recording = NO;
-  [self refresh];
-  self.needsDisplay = YES;
+  if (_recording) {
+    _recording = NO;
+    [self refresh];
+    self.needsDisplay = YES;
+    if (self.onRecordingChanged != nil) {
+      self.onRecordingChanged(NO);
+    }
+  }
   return YES;
 }
 
 - (void)mouseDown:(NSEvent *)event {
   (void)event;
-  if (!_recording) {
+  [self beginRecording];
+}
+
+- (void)beginRecording {
+  if (_recording) {
+    return;
+  }
+  if (self.window.firstResponder != self) {
     [self.window makeFirstResponder:self];
+  }
+  _recording = YES;
+  _previewFlags = 0;
+  [self refresh];
+  self.needsDisplay = YES;
+  if (self.onRecordingChanged != nil) {
+    self.onRecordingChanged(YES);
   }
 }
 
@@ -454,7 +473,8 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 @property(nonatomic, strong, readonly) SRHotkeyItem *item;
 
-- (instancetype)initWithHotkeyItem:(SRHotkeyItem *)item;
+- (instancetype)initWithHotkeyItem:(SRHotkeyItem *)item
+                  recordingChanged:(void (^)(BOOL recording))recordingChanged;
 - (SRHotkeyItem *)currentItem;
 
 @end
@@ -464,7 +484,8 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   SRShortcutRecorderView *_recorder;
 }
 
-- (instancetype)initWithHotkeyItem:(SRHotkeyItem *)item {
+- (instancetype)initWithHotkeyItem:(SRHotkeyItem *)item
+                  recordingChanged:(void (^)(BOOL recording))recordingChanged {
   self = [super initWithFrame:NSZeroRect];
   if (self == nil) {
     return nil;
@@ -490,6 +511,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   _recorder = [[SRShortcutRecorderView alloc] initWithFrame:NSZeroRect];
   [_recorder setShortcutKey:item.key modifiers:SRParseModifiers(item.modifiersText ?: @"")];
   _recorder.activeAppearance = item.enabled;
+  _recorder.onRecordingChanged = recordingChanged;
 
   [self addSubview:actionLabel];
   [self addSubview:_enabledSwitch];
@@ -715,6 +737,9 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     [rootStack.bottomAnchor constraintEqualToAnchor:contentView.bottomAnchor constant:-20.0],
     [hotkeysCard.heightAnchor constraintGreaterThanOrEqualToConstant:280.0],
   ]];
+
+  // Keep the window from opening with a shortcut recorder focused.
+  self.window.initialFirstResponder = self.workspaceWrapButton;
 }
 
 #pragma mark - Building blocks
@@ -977,6 +1002,14 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     [view removeFromSuperview];
   }
 
+  __weak SRSettingsWindowController *weakSelf = self;
+  void (^recordingChanged)(BOOL) = ^(BOOL recording) {
+    SRSettingsWindowController *strongSelf = weakSelf;
+    if (strongSelf != nil && strongSelf.inputSuspensionHandler != nil) {
+      strongSelf.inputSuspensionHandler(recording);
+    }
+  };
+
   NSMutableArray<SRHotkeyRowView *> *rowViews = [NSMutableArray arrayWithCapacity:document.hotkeys.count];
   NSString *currentSection = nil;
   BOOL isFirstRow = YES;
@@ -989,7 +1022,8 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
       [self addFullWidthArrangedView:[self separatorLine]];
     }
 
-    SRHotkeyRowView *rowView = [[SRHotkeyRowView alloc] initWithHotkeyItem:item];
+    SRHotkeyRowView *rowView = [[SRHotkeyRowView alloc] initWithHotkeyItem:item
+                                                         recordingChanged:recordingChanged];
     [rowViews addObject:rowView];
     [self addFullWidthArrangedView:rowView];
     isFirstRow = NO;

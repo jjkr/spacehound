@@ -73,6 +73,11 @@ class SPACERABBIT_EXPORT runtime final {
   [[nodiscard]] auto reload_settings() -> std::expected<void, error>;
   [[nodiscard]] auto current_workspace_state() const -> std::expected<workspace_state, error>;
 
+  // Suspends or resumes interception of global input (hotkeys and gestures)
+  // without tearing down the runtime. Used so shortcut editors can capture a
+  // key combination without the runtime acting on it. No-op when not running.
+  void set_input_suspended(bool suspended) noexcept;
+
   [[nodiscard]] auto running() const noexcept -> bool;
 
  private:
