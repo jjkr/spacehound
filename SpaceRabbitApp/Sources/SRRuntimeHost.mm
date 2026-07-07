@@ -1,6 +1,15 @@
 #import "SRRuntimeHost.h"
+#import "SRSettingsStore.h"
 
 #include <spacerabbit/daemon.hpp>
+
+namespace {
+
+auto settings_file_path(NSURL *url) -> std::filesystem::path {
+  return std::filesystem::path([url fileSystemRepresentation]);
+}
+
+}  // namespace
 
 @interface SRRuntimeHost ()
 
@@ -9,10 +18,11 @@
 
 - (void)handleWorkspaceStateChangeWithCurrentSpace:(NSUInteger)currentSpace
                                          numSpaces:(NSUInteger)numSpaces;
+- (NSError *)runtimeNSErrorForError:(const spacerabbit::daemon::error &)error;
+- (BOOL)startRuntime:(NSError *_Nullable *_Nullable)error;
+- (void)refreshRuntimeState;
 - (NSString *)statusTextForError:(const spacerabbit::daemon::error &)error;
 - (void)updateMenuBarTitle:(NSString *)menuBarTitle statusText:(NSString *)statusText;
-- (BOOL)ensureDefaultSettingsFileExists:(NSURL *_Nullable *_Nullable)settingsURL
-                                  error:(NSError *_Nullable *_Nullable)error;
 
 @end
 
@@ -55,35 +65,14 @@ static void SRRuntimeHostActiveSpaceChanged(
 
   [self updateMenuBarTitle:@"" statusText:@"Starting..."];
 
-  NSURL *settingsURL = nil;
-  NSError *settingsError = nil;
-  if (![self ensureDefaultSettingsFileExists:&settingsURL error:&settingsError]) {
-    NSString *message = settingsError.localizedDescription ?: @"Failed to prepare settings";
+  NSError *runtimeError = nil;
+  if (![self startRuntime:&runtimeError]) {
+    NSString *message = runtimeError.localizedDescription ?: @"Failed to start";
     [self updateMenuBarTitle:@"" statusText:message];
     return;
   }
 
-  spacerabbit::daemon::options options;
-  options.settings_path_override = std::filesystem::path(settingsURL.path.UTF8String);
-  options.observer.active_space_changed = SRRuntimeHostActiveSpaceChanged;
-  options.observer.context = (__bridge void *)self;
-
-  const auto started = _runtime.start(options);
-  if (!started.has_value()) {
-    NSString *message = [self statusTextForError:started.error()];
-    NSLog(@"SpaceRabbit runtime start failed: %@", message);
-    [self updateMenuBarTitle:@"" statusText:message];
-    return;
-  }
-
-  const auto workspaceState = _runtime.current_workspace_state();
-  if (workspaceState.has_value()) {
-    [self handleWorkspaceStateChangeWithCurrentSpace:static_cast<NSUInteger>(workspaceState->current_space)
-                                          numSpaces:static_cast<NSUInteger>(workspaceState->num_spaces)];
-    return;
-  }
-
-  [self updateMenuBarTitle:@"" statusText:@"Running"];
+  [self refreshRuntimeState];
 }
 
 - (void)stop {
@@ -92,6 +81,28 @@ static void SRRuntimeHostActiveSpaceChanged(
   }
 
   [self updateMenuBarTitle:@"" statusText:@"Stopped"];
+}
+
+- (BOOL)applySettings:(NSError *_Nullable *_Nullable)error {
+  if (_runtime.running()) {
+    const auto reloaded = _runtime.reload_settings();
+    if (!reloaded.has_value()) {
+      if (error != NULL) {
+        *error = [self runtimeNSErrorForError:reloaded.error()];
+      }
+      return NO;
+    }
+
+    [self refreshRuntimeState];
+    return YES;
+  }
+
+  if (![self startRuntime:error]) {
+    return NO;
+  }
+
+  [self refreshRuntimeState];
+  return YES;
 }
 
 - (void)handleWorkspaceStateChangeWithCurrentSpace:(NSUInteger)currentSpace
@@ -130,6 +141,45 @@ static void SRRuntimeHostActiveSpaceChanged(
   return @"Runtime error";
 }
 
+- (NSError *)runtimeNSErrorForError:(const spacerabbit::daemon::error &)error {
+  return [NSError errorWithDomain:@"com.animaslabs.SpaceRabbit.Runtime"
+                             code:static_cast<NSInteger>(error.code)
+                         userInfo:@{NSLocalizedDescriptionKey : [self statusTextForError:error]}];
+}
+
+- (BOOL)startRuntime:(NSError *_Nullable *_Nullable)error {
+  NSURL *settingsURL = [SRSettingsStore settingsFileURL:error];
+  if (settingsURL == nil) {
+    return NO;
+  }
+
+  spacerabbit::daemon::options options;
+  options.settings_path_override = settings_file_path(settingsURL);
+  options.observer.active_space_changed = SRRuntimeHostActiveSpaceChanged;
+  options.observer.context = (__bridge void *)self;
+
+  const auto started = _runtime.start(options);
+  if (!started.has_value()) {
+    if (error != NULL) {
+      *error = [self runtimeNSErrorForError:started.error()];
+    }
+    return NO;
+  }
+
+  return YES;
+}
+
+- (void)refreshRuntimeState {
+  const auto workspaceState = _runtime.current_workspace_state();
+  if (workspaceState.has_value()) {
+    [self handleWorkspaceStateChangeWithCurrentSpace:static_cast<NSUInteger>(workspaceState->current_space)
+                                          numSpaces:static_cast<NSUInteger>(workspaceState->num_spaces)];
+    return;
+  }
+
+  [self updateMenuBarTitle:@"" statusText:@"Running"];
+}
+
 - (void)updateMenuBarTitle:(NSString *)menuBarTitle statusText:(NSString *)statusText {
   _menuBarTitle = [menuBarTitle copy];
   _statusText = [statusText copy];
@@ -137,60 +187,6 @@ static void SRRuntimeHostActiveSpaceChanged(
   if (self.stateChangeHandler != nil) {
     self.stateChangeHandler(_menuBarTitle, _statusText);
   }
-}
-
-- (BOOL)ensureDefaultSettingsFileExists:(NSURL *_Nullable *_Nullable)settingsURL
-                                  error:(NSError *_Nullable *_Nullable)error {
-  NSFileManager *fileManager = [NSFileManager defaultManager];
-  NSURL *applicationSupportDirectory =
-      [[fileManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] firstObject];
-  if (applicationSupportDirectory == nil) {
-    if (error != NULL) {
-      *error = [NSError errorWithDomain:NSCocoaErrorDomain
-                                   code:NSFileNoSuchFileError
-                               userInfo:@{NSLocalizedDescriptionKey : @"Application Support directory not found"}];
-    }
-    return NO;
-  }
-
-  NSURL *spaceRabbitDirectory = [applicationSupportDirectory URLByAppendingPathComponent:@"SpaceRabbit"
-                                                                              isDirectory:YES];
-  if (![fileManager createDirectoryAtURL:spaceRabbitDirectory
-             withIntermediateDirectories:YES
-                              attributes:nil
-                                   error:error]) {
-    return NO;
-  }
-
-  NSURL *resolvedSettingsURL = [spaceRabbitDirectory URLByAppendingPathComponent:@"settings.json"];
-  if (![fileManager fileExistsAtPath:resolvedSettingsURL.path]) {
-    NSDictionary *defaultSettings = @{
-      @"version" : @"1.0",
-      @"workspaceWrap" : @NO,
-      @"displayWrap" : @NO,
-      @"trayScroll" : @YES,
-      @"trayScrollInverted" : @NO,
-      @"hotkeys" : @{},
-      @"fastSwipe" : @YES,
-      @"telemetryEnabled" : @YES,
-    };
-    NSData *settingsData = [NSJSONSerialization dataWithJSONObject:defaultSettings
-                                                           options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys
-                                                             error:error];
-    if (settingsData == nil) {
-      return NO;
-    }
-
-    if (![settingsData writeToURL:resolvedSettingsURL options:NSDataWritingAtomic error:error]) {
-      return NO;
-    }
-  }
-
-  if (settingsURL != NULL) {
-    *settingsURL = resolvedSettingsURL;
-  }
-
-  return YES;
 }
 
 @end

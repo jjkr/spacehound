@@ -27,9 +27,7 @@ help:
 	@echo "  CONFIGURATION=Debug|Release"
 	@echo "  DERIVED_DATA_PATH=build/DerivedData"
 
-generate: $(PROJECT)
-
-$(PROJECT): $(PROJECT_SPEC)
+generate:
 	xcodegen generate
 
 build: generate

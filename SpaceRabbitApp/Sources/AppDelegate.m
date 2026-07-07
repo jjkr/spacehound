@@ -1,5 +1,6 @@
 #import "AppDelegate.h"
 #import "SRRuntimeHost.h"
+#import "SRSettingsWindowController.h"
 
 @interface AppDelegate ()
 
@@ -7,6 +8,7 @@
 @property(nonatomic, strong) NSMenu *statusMenu;
 @property(nonatomic, strong) NSMenuItem *runtimeStatusItem;
 @property(nonatomic, strong) SRRuntimeHost *runtimeHost;
+@property(nonatomic, strong) SRSettingsWindowController *settingsWindowController;
 
 @end
 
@@ -41,6 +43,11 @@
 
   [self.statusMenu addItem:[NSMenuItem separatorItem]];
 
+  NSMenuItem *settingsItem =
+      [[NSMenuItem alloc] initWithTitle:@"Settings..." action:@selector(openSettings:) keyEquivalent:@","];
+  settingsItem.target = self;
+  [self.statusMenu addItem:settingsItem];
+
   NSMenuItem *quitItem =
       [[NSMenuItem alloc] initWithTitle:@"Quit SpaceRabbit" action:@selector(quit:) keyEquivalent:@"q"];
   quitItem.target = self;
@@ -56,6 +63,13 @@
     }
     weakSelf.runtimeStatusItem.title = statusText;
   };
+
+  self.settingsWindowController = [[SRSettingsWindowController alloc] init];
+  __weak typeof(self) weakWindowSelf = self;
+  self.settingsWindowController.applyHandler = ^BOOL(NSError **error) {
+    return [weakWindowSelf.runtimeHost applySettings:error];
+  };
+
   [self.runtimeHost start];
 }
 
@@ -68,6 +82,11 @@
   (void)sender;
   [self.runtimeHost stop];
   [NSApp terminate:nil];
+}
+
+- (void)openSettings:(id)sender {
+  (void)sender;
+  [self.settingsWindowController showWindowAndActivate];
 }
 
 @end

@@ -8,6 +8,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, readonly) NSString *menuBarTitle;
 @property(nonatomic, copy, nullable) void (^stateChangeHandler)(NSString *menuBarTitle, NSString *statusText);
 
+- (BOOL)applySettings:(NSError *_Nullable *_Nullable)error;
 - (void)start;
 - (void)stop;
 
