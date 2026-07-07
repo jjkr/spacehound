@@ -4,7 +4,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 typedef BOOL (^SRSettingsApplyHandler)(NSError **error);
 
-@interface SRSettingsWindowController : NSWindowController
+@interface SRSettingsWindowController : NSWindowController <NSWindowDelegate>
 
 @property(nonatomic, copy, nullable) SRSettingsApplyHandler applyHandler;
 

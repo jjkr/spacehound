@@ -648,12 +648,6 @@ auto initialize_runtime(
               return event_ref;
             }
 
-            // While a shortcut is being recorded, pass everything through so the
-            // editor receives the keystroke instead of the runtime acting on it.
-            if (context->input_suspended.load(std::memory_order_relaxed)) {
-              return event_ref;
-            }
-
             if (type == cg::gesture_event_type) {
               if (!context->config.fast_swipe || detail::is_synthetic_daemon_event(event)) {
                 return event_ref;
@@ -690,6 +684,13 @@ auto initialize_runtime(
             }
 
             if (type != kCGEventKeyDown) {
+              return event_ref;
+            }
+
+            // While a shortcut is being recorded, let keystrokes reach the editor
+            // instead of firing a matching hotkey. Gestures (fast swipe, above)
+            // stay live so swiping keeps working during recording.
+            if (context->input_suspended.load(std::memory_order_relaxed)) {
               return event_ref;
             }
 

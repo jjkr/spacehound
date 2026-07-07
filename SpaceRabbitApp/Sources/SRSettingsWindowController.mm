@@ -590,6 +590,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     return nil;
   }
 
+  window.delegate = self;
   [self buildInterface];
   return self;
 }
@@ -1030,6 +1031,18 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   }
 
   self.hotkeyRowViews = [rowViews copy];
+}
+
+#pragma mark - NSWindowDelegate
+
+- (void)windowWillClose:(NSNotification *)notification {
+  (void)notification;
+  // Closing the window while a recorder is still capturing must not leave global
+  // hotkey handling suspended. Clear the block unconditionally; resigning first
+  // responder on close isn't guaranteed to fire the recorder's own reset.
+  if (self.inputSuspensionHandler != nil) {
+    self.inputSuspensionHandler(NO);
+  }
 }
 
 - (void)presentSettingsError:(NSError *)error {
