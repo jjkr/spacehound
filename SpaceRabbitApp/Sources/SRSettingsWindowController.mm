@@ -568,6 +568,11 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 @property(nonatomic, strong) NSTextField *statusLabel;
 @property(nonatomic, copy) NSArray<SRHotkeyRowView *> *hotkeyRowViews;
 
+// YES while a recorder is capturing. The runtime block is only engaged when
+// this is true *and* the settings window is key, so hotkeys stay live whenever
+// the window is in the background.
+@property(nonatomic, assign) BOOL recorderListening;
+
 @end
 
 @implementation SRSettingsWindowController
@@ -1006,9 +1011,11 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   __weak SRSettingsWindowController *weakSelf = self;
   void (^recordingChanged)(BOOL) = ^(BOOL recording) {
     SRSettingsWindowController *strongSelf = weakSelf;
-    if (strongSelf != nil && strongSelf.inputSuspensionHandler != nil) {
-      strongSelf.inputSuspensionHandler(recording);
+    if (strongSelf == nil) {
+      return;
     }
+    strongSelf.recorderListening = recording;
+    [strongSelf updateInputSuspension];
   };
 
   NSMutableArray<SRHotkeyRowView *> *rowViews = [NSMutableArray arrayWithCapacity:document.hotkeys.count];
@@ -1035,14 +1042,33 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 #pragma mark - NSWindowDelegate
 
+// Engage the runtime hotkey block only while a recorder is listening *and* the
+// settings window is key. Losing focus reactivates hotkeys; regaining focus
+// with a recorder still armed re-suspends them so it keeps listening.
+- (void)updateInputSuspension {
+  if (self.inputSuspensionHandler == nil) {
+    return;
+  }
+  BOOL shouldSuspend = self.recorderListening && self.window.isKeyWindow;
+  self.inputSuspensionHandler(shouldSuspend);
+}
+
+- (void)windowDidBecomeKey:(NSNotification *)notification {
+  (void)notification;
+  [self updateInputSuspension];
+}
+
+- (void)windowDidResignKey:(NSNotification *)notification {
+  (void)notification;
+  [self updateInputSuspension];
+}
+
 - (void)windowWillClose:(NSNotification *)notification {
   (void)notification;
-  // Closing the window while a recorder is still capturing must not leave global
-  // hotkey handling suspended. Clear the block unconditionally; resigning first
+  // Closing must never leave global hotkey handling suspended. Resigning first
   // responder on close isn't guaranteed to fire the recorder's own reset.
-  if (self.inputSuspensionHandler != nil) {
-    self.inputSuspensionHandler(NO);
-  }
+  self.recorderListening = NO;
+  [self updateInputSuspension];
 }
 
 - (void)presentSettingsError:(NSError *)error {
