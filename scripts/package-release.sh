@@ -49,6 +49,15 @@ function setup_notary_args() {
 }
 
 require_env DEVELOPMENT_TEAM
+require_env SPARKLE_PUBLIC_ED_KEY
+
+if ! SPARKLE_PUBLIC_KEY_BYTES=$(print -rn -- "${SPARKLE_PUBLIC_ED_KEY}" | base64 --decode 2>/dev/null | wc -c | tr -d ' '); then
+  SPARKLE_PUBLIC_KEY_BYTES=0
+fi
+if [[ "${SPARKLE_PUBLIC_KEY_BYTES}" != "32" ]]; then
+  echo "error: SPARKLE_PUBLIC_ED_KEY must be a base64-encoded 32-byte Ed25519 public key" >&2
+  exit 1
+fi
 
 if ! command -v xcodegen >/dev/null 2>&1; then
   echo "error: xcodegen is required for release packaging" >&2
@@ -57,6 +66,24 @@ fi
 
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://updates.spacerabbit.io/appcast.xml}"
+
+if [[ -n "${RELEASE_VERSION}" ]]; then
+  RELEASE_VERSION="${RELEASE_VERSION#refs/tags/}"
+  RELEASE_VERSION="${RELEASE_VERSION#v}"
+fi
+
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  RELEASE_VERSION="${MARKETING_VERSION:-0.1.0}"
+fi
+
+if [[ ! "${RELEASE_VERSION}" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+  echo "error: release version must use X.Y.Z format, got ${RELEASE_VERSION}" >&2
+  exit 1
+fi
+
+MARKETING_VERSION="${RELEASE_VERSION}"
+CURRENT_PROJECT_VERSION="${RELEASE_VERSION}"
 
 rm -rf "${BUILD_ROOT}" "${DIST_PATH}" "${DERIVED_DATA_PATH}"
 mkdir -p "${BUILD_ROOT}" "${DIST_PATH}"
@@ -97,6 +124,10 @@ xcodebuild \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
+  MARKETING_VERSION="${MARKETING_VERSION}" \
+  CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION}" \
+  SPARKLE_FEED_URL="${SPARKLE_FEED_URL}" \
+  SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY}" \
   archive
 
 xcodebuild \
@@ -111,16 +142,28 @@ if [[ ! -d "${APP_PATH}" ]]; then
   exit 1
 fi
 
-if [[ -z "${RELEASE_VERSION}" ]]; then
-  RELEASE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_PATH}/Contents/Info.plist")
+BUILT_MARKETING_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_PATH}/Contents/Info.plist")
+BUILT_BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${APP_PATH}/Contents/Info.plist")
+BUILT_FEED_URL=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "${APP_PATH}/Contents/Info.plist")
+BUILT_PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "${APP_PATH}/Contents/Info.plist")
+
+if [[ "${BUILT_MARKETING_VERSION}" != "${RELEASE_VERSION}" ||
+      "${BUILT_BUNDLE_VERSION}" != "${RELEASE_VERSION}" ]]; then
+  echo "error: exported app version does not match ${RELEASE_VERSION}" >&2
+  exit 1
 fi
-RELEASE_VERSION="${RELEASE_VERSION#refs/tags/}"
+
+if [[ "${BUILT_FEED_URL}" != "${SPARKLE_FEED_URL}" ||
+      "${BUILT_PUBLIC_KEY}" != "${SPARKLE_PUBLIC_ED_KEY}" ]]; then
+  echo "error: exported app does not contain the requested Sparkle configuration" >&2
+  exit 1
+fi
 
 ZIP_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-arm64.zip"
 DMG_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-arm64.dmg"
 CHECKSUMS_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-SHA256SUMS.txt"
 
-codesign --verify --strict --verbose=2 "${APP_PATH}"
+codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
 ditto -c -k --sequesterRsrc --keepParent "${APP_PATH}" "${ZIP_PATH}"
 

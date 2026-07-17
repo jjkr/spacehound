@@ -1,0 +1,27 @@
+{
+  "name": "spacerabbit-update-infrastructure",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "synth": "cdk synth",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.261.0",
+    "constructs": "10.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "aws-cdk": "2.1132.0",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

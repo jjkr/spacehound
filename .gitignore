@@ -5,3 +5,6 @@ SpaceRabbit.xcodeproj/
 *.xcuserstate
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+infra/cdk.out/
+infra/node_modules/
+.pnpm-store/

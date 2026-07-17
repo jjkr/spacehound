@@ -27,6 +27,9 @@ Key source files:
 - `SpaceRabbitApp/Sources/SRPermissions.m` — Accessibility access checks.
 - `spacerabbit-core/` — the C++ runtime that performs Space/display/window
   switching. See `spacerabbit-core/docs/` for the settings schema and API notes.
+- Sparkle 2 — checks the signed appcast and safely replaces/relaunches the app.
+  Updater preferences are owned by Sparkle in `NSUserDefaults`, not by the
+  runtime's `settings.json` schema.
 
 ## Prerequisites
 
@@ -66,17 +69,35 @@ runtime (reader) is documented in
 
 ## Distribution
 
-For direct GitHub Releases distribution, ship a signed and notarized DMG as the
-primary download. The repo includes:
+Production updates are hosted at `https://updates.spacerabbit.io` from a private
+S3 bucket behind CloudFront. GitHub Releases contains an identical mirror. The
+repo includes:
 
 - `scripts/package-release.sh` to archive an arm64-only release build, sign it
   with Developer ID, notarize a ZIP of the app, staple the app, build a DMG, then
   notarize and staple the DMG.
-- `.github/workflows/release.yml` to run the same flow on GitHub Actions and
-  attach the DMG, ZIP, and SHA-256 checksums to a release tag.
+- `scripts/generate-appcast.sh` to generate and verify a signed Sparkle appcast
+  without exposing the private signing key in process arguments.
+- `.github/workflows/release.yml` to publish immutable AWS artifacts, mirror a
+  production GitHub Release, update latest-download aliases, and publish the
+  appcast only after every preceding step succeeds.
+- `infra/` for the TypeScript AWS CDK stack. See
+  [`infra/README.md`](infra/README.md) for the one-time setup.
 
 The release app is packaged as a single executable bundle. There is no nested
-daemon helper to copy or sign separately.
+SpaceRabbit daemon helper to copy or sign separately. Sparkle's framework and
+installer helpers are embedded and signed by Xcode.
+
+### Version contract
+
+Production tags must use `vX.Y.Z`. The tag value without `v` is written to both
+`CFBundleShortVersionString` and `CFBundleVersion`, and is also used by the C++
+version header, archive names, and appcast. Published versions and versioned S3
+objects are immutable; a correction must be a higher patch release.
+
+`v0.1.0` is the bootstrap release that establishes the Sparkle public key. Use
+the staging workflow to validate a signed `0.1.0` to `0.1.1` update before the
+production feed is relied upon.
 
 ### Release secrets
 
@@ -86,17 +107,53 @@ Set these repository secrets for GitHub Actions:
 - `P12_PASSWORD`: password for the `.p12`
 - `BUILD_KEYCHAIN_PASSWORD`: temporary keychain password used during the job
 - `DEVELOPMENT_TEAM`: your Apple Developer Team ID
-- `APPLE_API_KEY_BASE64`: base64-encoded App Store Connect API key `.p8`
-- `APPLE_API_KEY_ID`: App Store Connect key ID
-- `APPLE_API_ISSUER_ID`: App Store Connect issuer ID for team keys
+- `APPLE_ID`: Apple ID used for notarization
+- `APPLE_APP_SPECIFIC_PASSWORD`: app-specific password for that Apple ID
+
+The protected `production` GitHub environment also needs:
+
+- Secret `SPARKLE_ED_PRIVATE_KEY`: the exported Sparkle private seed.
+- Variable `SPARKLE_PUBLIC_ED_KEY`: the matching base64 public key.
+- Variable `AWS_RELEASE_ROLE_ARN`: CDK output `GitHubPublisherRoleArn`.
+- Variable `AWS_RELEASE_BUCKET`: CDK output `ArtifactBucketName`.
+- Variable `AWS_CLOUDFRONT_DISTRIBUTION_ID`: CDK output `DistributionId`.
+- Variable `AWS_RELEASE_REGION`: `us-east-1`.
+
+Keep an encrypted offline backup of the Sparkle private key. Do not print it,
+place it in command arguments, or commit it. Losing it prevents new signed-feed
+updates until a deliberate key-recovery or rotation release is performed.
 
 ### Local signed build
 
 ```sh
 export DEVELOPMENT_TEAM=YOURTEAMID
 export CODE_SIGN_IDENTITY="Developer ID Application"
+export RELEASE_VERSION=0.1.0
+export SPARKLE_PUBLIC_ED_KEY="YOUR_PUBLIC_KEY"
 export APPLE_API_KEY_PATH=/absolute/path/to/AuthKey_XXXXXX.p8
 export APPLE_API_KEY_ID=XXXXXX
 export APPLE_API_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 make package-release
+```
+
+The release workflow has two modes:
+
+- Pushing a new `vX.Y.Z` tag publishes production AWS artifacts and a GitHub
+  Release mirror.
+- Running it manually publishes a signed staging build under `/staging/` and
+  never creates a GitHub Release or modifies the production appcast.
+
+If a job fails after uploading versioned objects but before publishing the
+appcast, that release is not visible to Sparkle. Confirm the appcast still
+points to the previous version, then remove only the orphaned version prefix
+and any matching GitHub Release before rerunning the tag. S3 versioning retains
+the removed object versions for recovery. Never remove or replace a prefix that
+has appeared in an appcast; publish a higher patch version instead.
+
+Run the local validation suites with:
+
+```sh
+make release-script-tests
+make infra-install
+make infra-test
 ```

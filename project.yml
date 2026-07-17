@@ -7,9 +7,16 @@ options:
 
 settings:
   base:
-    CURRENT_PROJECT_VERSION: 1
+    CURRENT_PROJECT_VERSION: 0.1.0
     MARKETING_VERSION: 0.1.0
     CLANG_ENABLE_OBJC_ARC: YES
+    SPARKLE_FEED_URL: https://updates.spacerabbit.io/appcast.xml
+    SPARKLE_PUBLIC_ED_KEY: ""
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.9.2
 
 targets:
   SpaceRabbit:
@@ -52,6 +59,8 @@ targets:
       configs:
         Release:
           ENABLE_HARDENED_RUNTIME: YES
+    dependencies:
+      - package: Sparkle
     preBuildScripts:
       - name: Generate spacerabbit version header
         outputFiles:
@@ -104,10 +113,19 @@ targets:
       path: SpaceRabbitApp/Info.plist
       properties:
         CFBundleDisplayName: SpaceRabbit
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
         NSPrincipalClass: NSApplication
         NSSupportsAutomaticTermination: true
         NSSupportsSuddenTermination: true
+        SUAllowsAutomaticUpdates: true
+        SUAutomaticallyUpdate: false
+        SUEnableAutomaticChecks: true
+        SUFeedURL: $(SPARKLE_FEED_URL)
+        SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
+        SURequireSignedFeed: true
+        SUVerifyUpdateBeforeExtraction: true
 
 schemes:
   SpaceRabbit:

@@ -15,10 +15,13 @@ waiting on the built-in animations. The menu bar always shows which Space you're
 
 ## Install
 
-1. Download the latest DMG from the [**Releases page**](https://github.com/animaslabs/spacerabbit/releases/latest).
+1. Download the [**latest SpaceRabbit DMG**](https://updates.spacerabbit.io/releases/latest/SpaceRabbit-arm64.dmg).
 2. Open the DMG and drag **SpaceRabbit** to your Applications folder.
 3. Launch SpaceRabbit. It appears in the menu bar — there is no Dock icon or main
    window.
+
+The same release artifacts are mirrored on the
+[GitHub Releases page](https://github.com/animaslabs/spacerabbit/releases/latest).
 
 **Requirements:** macOS 14 (Sonoma) or newer.
 
@@ -59,7 +62,18 @@ menu:
 - **Space _X_ of _Y_** — the current status (or a message if access is needed).
 - **Grant Accessibility Access…** — shown only when access hasn't been granted yet.
 - **Settings…** (⌘,) — open the Settings window.
+- **Check for Updates…** — check the signed SpaceRabbit update feed immediately.
 - **Quit SpaceRabbit** (⌘Q).
+
+## Automatic updates
+
+SpaceRabbit checks its signed update feed once per day. When a new version is
+available, Sparkle shows the release notes and lets you install it. Automatic
+installation is opt-in; you can enable it from Sparkle's update prompt.
+
+Every update is Developer ID signed, notarized by Apple, and independently
+signed with SpaceRabbit's Sparkle Ed25519 key. If the feed, archive, or signature
+cannot be verified, the installed app is left unchanged.
 
 ## Keyboard shortcuts
 

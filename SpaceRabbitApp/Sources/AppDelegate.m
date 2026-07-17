@@ -2,6 +2,7 @@
 #import "SRPermissions.h"
 #import "SRRuntimeHost.h"
 #import "SRSettingsWindowController.h"
+#import <Sparkle/Sparkle.h>
 
 @interface AppDelegate ()
 
@@ -12,6 +13,7 @@
 @property(nonatomic, strong) SRRuntimeHost *runtimeHost;
 @property(nonatomic, strong) SRSettingsWindowController *settingsWindowController;
 @property(nonatomic, strong, nullable) NSTimer *accessibilityPollTimer;
+@property(nonatomic, strong, nullable) SPUStandardUpdaterController *updaterController;
 
 @end
 
@@ -21,6 +23,16 @@
   (void)notification;
 
   [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+
+  // Start the updater independently of Accessibility permission and the
+  // SpaceRabbit runtime. This also lets users update a misconfigured install.
+  NSString *sparklePublicKey = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"SUPublicEDKey"];
+  if (sparklePublicKey.length > 0) {
+    self.updaterController =
+        [[SPUStandardUpdaterController alloc] initWithStartingUpdater:YES
+                                                     updaterDelegate:nil
+                                                  userDriverDelegate:nil];
+  }
 
   self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
   NSStatusBarButton *button = self.statusItem.button;
@@ -57,6 +69,17 @@
       [[NSMenuItem alloc] initWithTitle:@"Settings..." action:@selector(openSettings:) keyEquivalent:@","];
   settingsItem.target = self;
   [self.statusMenu addItem:settingsItem];
+
+  if (self.updaterController != nil) {
+    NSMenuItem *checkForUpdatesItem =
+        [[NSMenuItem alloc] initWithTitle:@"Check for Updates…"
+                                   action:@selector(checkForUpdates:)
+                            keyEquivalent:@""];
+    checkForUpdatesItem.target = self.updaterController;
+    [self.statusMenu addItem:checkForUpdatesItem];
+  }
+
+  [self.statusMenu addItem:[NSMenuItem separatorItem]];
 
   NSMenuItem *quitItem =
       [[NSMenuItem alloc] initWithTitle:@"Quit SpaceRabbit" action:@selector(quit:) keyEquivalent:@"q"];

@@ -8,7 +8,7 @@ DERIVED_DATA_PATH ?= build/DerivedData
 APP_NAME := SpaceRabbit.app
 APP_PATH := $(DERIVED_DATA_PATH)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
 
-.PHONY: help generate build release package-release run open clean distclean app-path
+.PHONY: help generate build release package-release release-script-tests infra-install infra-test run open clean distclean app-path
 
 help:
 	@echo "SpaceRabbit development targets"
@@ -17,6 +17,9 @@ help:
 	@echo "  make build              Build $(SCHEME) ($(CONFIGURATION))"
 	@echo "  make release            Build $(SCHEME) with CONFIGURATION=Release (unsigned)"
 	@echo "  make package-release    Archive, sign, notarize, and package Release artifacts"
+	@echo "  make release-script-tests  Test release version validation"
+	@echo "  make infra-install      Install pinned CDK dependencies with mise/pnpm"
+	@echo "  make infra-test         Type-check and test the CDK stack"
 	@echo "  make run                Build and launch the app bundle"
 	@echo "  make open               Launch the existing built app bundle"
 	@echo "  make clean              Remove repo-local build artifacts"
@@ -44,6 +47,16 @@ release:
 
 package-release: generate
 	./scripts/package-release.sh
+
+release-script-tests:
+	./scripts/tests/release-scripts-test.sh
+
+infra-install:
+	mise exec -- pnpm --dir infra install --frozen-lockfile
+
+infra-test:
+	mise exec -- pnpm --dir infra run build
+	mise exec -- pnpm --dir infra test
 
 run: build
 	open "$(APP_PATH)"
