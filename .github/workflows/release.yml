@@ -22,6 +22,12 @@ permissions:
   contents: write
   id-token: write
 
+# Version ordering is checked while holding this per-channel workflow lock.
+# This prevents an older build from publishing mutable aliases after a newer one.
+concurrency:
+  group: spacerabbit-release-${{ github.event_name == 'push' && 'production' || 'staging' }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: macos-26

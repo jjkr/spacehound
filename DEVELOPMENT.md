@@ -84,6 +84,12 @@ repo includes:
 - `infra/` for the TypeScript AWS CDK stack. See
   [`infra/README.md`](infra/README.md) for the one-time setup.
 
+The workflow serializes each update channel before checking published version
+ordering, so concurrent jobs cannot roll a mutable feed or `latest` alias back.
+Appcast generation also derives the public key from the private signing secret
+and refuses to continue unless it matches `SPARKLE_PUBLIC_ED_KEY` embedded in
+the app.
+
 The release app is packaged as a single executable bundle. There is no nested
 SpaceRabbit daemon helper to copy or sign separately. Sparkle's framework and
 installer helpers are embedded and signed by Xcode.

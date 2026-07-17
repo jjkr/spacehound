@@ -18,6 +18,7 @@ required_vars=(
   DOWNLOAD_URL_PREFIX
   RELEASE_NOTES_URL_PREFIX
   SPARKLE_ED_PRIVATE_KEY
+  SPARKLE_PUBLIC_ED_KEY
   SPARKLE_GENERATE_APPCAST
   SPARKLE_SIGN_UPDATE
 )
@@ -46,6 +47,10 @@ for tool in "${SPARKLE_GENERATE_APPCAST}" "${SPARKLE_SIGN_UPDATE}"; do
   fi
 done
 
+print -rn -- "${SPARKLE_ED_PRIVATE_KEY}" | xcrun swift \
+  "${0:A:h}/validate-sparkle-key-pair.swift" \
+  "${SPARKLE_PUBLIC_ED_KEY}"
+
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/spacerabbit-appcast.XXXXXX")
 function cleanup() {
   rm -rf "${work_dir}"
@@ -59,8 +64,8 @@ cp "${RELEASE_NOTES_PATH}" "${work_dir}/${notes_name}"
 
 print -rn -- "${SPARKLE_ED_PRIVATE_KEY}" | "${SPARKLE_GENERATE_APPCAST}" \
   --ed-key-file - \
-  --download-url-prefix "${DOWNLOAD_URL_PREFIX%/}" \
-  --release-notes-url-prefix "${RELEASE_NOTES_URL_PREFIX%/}" \
+  --download-url-prefix "${DOWNLOAD_URL_PREFIX%/}/" \
+  --release-notes-url-prefix "${RELEASE_NOTES_URL_PREFIX%/}/" \
   --link "https://github.com/animaslabs/spacerabbit" \
   --versions "${version}" \
   --maximum-versions 1 \
@@ -90,10 +95,13 @@ minimum_system_version=$(xmllint --xpath \
 hardware_requirements=$(xmllint --xpath \
   'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="hardwareRequirements"])' \
   "${work_dir}/appcast.xml")
+enclosure_signature=$(xmllint --xpath \
+  'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@*[local-name()="edSignature"])' \
+  "${work_dir}/appcast.xml")
 
 expected_url="${DOWNLOAD_URL_PREFIX%/}/${archive_name}"
 if [[ "${appcast_version}" != "${version}" || "${enclosure_url}" != "${expected_url}" ]]; then
-  echo "error: generated appcast does not match version ${version} and ${expected_url}" >&2
+  echo "error: generated appcast has version ${appcast_version} and URL ${enclosure_url}; expected ${version} and ${expected_url}" >&2
   exit 1
 fi
 
@@ -102,9 +110,19 @@ if [[ "${minimum_system_version}" != "14.0" || "${hardware_requirements}" != "ar
   exit 1
 fi
 
-if ! grep -q 'sparkle:edSignature=' "${work_dir}/appcast.xml" ||
-   ! grep -q '<!-- sparkle-signatures:' "${work_dir}/appcast.xml"; then
-  echo "error: generated appcast is missing update or feed signatures" >&2
+if [[ -z "${enclosure_signature}" ]]; then
+  echo "error: generated appcast enclosure is missing its Sparkle EdDSA signature" >&2
+  exit 1
+fi
+
+print -rn -- "${SPARKLE_ED_PRIVATE_KEY}" | "${SPARKLE_SIGN_UPDATE}" \
+  --verify \
+  --ed-key-file - \
+  "${work_dir}/${archive_name}" \
+  "${enclosure_signature}"
+
+if ! grep -q '<!-- sparkle-signatures:' "${work_dir}/appcast.xml"; then
+  echo "error: generated appcast is missing its signed-feed block" >&2
   exit 1
 fi
 
