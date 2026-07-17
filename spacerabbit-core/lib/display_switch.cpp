@@ -500,6 +500,29 @@ auto plan_display_request(
   return {};
 }
 
+auto cursor_anchor_point(CGRect display_bounds) noexcept -> CGPoint {
+  return CGPoint{
+      .x = display_bounds.origin.x + display_bounds.size.width / 2.0,
+      .y = display_bounds.origin.y + 1.0,
+  };
+}
+
+auto ensure_cursor_on_display(
+    cg::event_source_view synthetic_source,
+    CGRect display_bounds) noexcept -> bool {
+  const auto cursor_event = cg::event::create(synthetic_source);
+  if (!cursor_event) {
+    return false;
+  }
+
+  if (rect_contains_point(display_bounds, cursor_event.location())) {
+    return true;
+  }
+
+  return cg::warp_mouse_cursor_position(cursor_anchor_point(display_bounds)) ==
+         kCGErrorSuccess;
+}
+
 auto find_frontmost_window_index_on_display(
     std::span<const window_record> windows,
     CGRect target_bounds) noexcept -> std::optional<std::size_t> {
@@ -625,6 +648,10 @@ auto execute_display_request(
   }
 
   const auto &target_display = displays[plan.target_index];
+  if (!ensure_cursor_on_display(synthetic_source, target_display.bounds)) {
+    return std::unexpected(runtime_error("Failed to move the cursor to the target display."));
+  }
+
   const auto target_window_index =
       find_frontmost_window_index_on_display(std::span{windows}, target_display.bounds);
   if (target_window_index) {

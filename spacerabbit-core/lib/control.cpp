@@ -85,10 +85,35 @@ auto dictionary_number_int64(
   return true;
 }
 
-auto active_display_space_bounds(detail::workspace_bounds &out_bounds) -> bool {
+auto display_bounds_for_identifier(
+    cf::string_view display_identifier,
+    CGRect &out_bounds) -> bool {
+  std::vector<CGDirectDisplayID> display_ids;
+  if (cg::active_displays(display_ids) != kCGErrorSuccess) {
+    return false;
+  }
+
+  for (const auto display_id : display_ids) {
+    const auto identifier = cg::display_uuid_string(display_id);
+    if (identifier && identifier.equals(display_identifier)) {
+      out_bounds = cg::display_bounds(display_id);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+auto active_display_space_bounds(
+    detail::workspace_bounds &out_bounds,
+    CGRect &out_display_bounds) -> bool {
   const auto connection = cgs::main_connection_id();
   const auto active_display = cgs::copy_active_menu_bar_display_identifier(connection);
   if (!active_display) {
+    return false;
+  }
+
+  if (!display_bounds_for_identifier(active_display.view(), out_display_bounds)) {
     return false;
   }
 
@@ -180,7 +205,8 @@ auto execute_workspace_request(
   }
 
   detail::workspace_bounds bounds{};
-  if (!active_display_space_bounds(bounds)) {
+  CGRect display_bounds{};
+  if (!active_display_space_bounds(bounds, display_bounds)) {
     return std::unexpected(state_error("Failed to determine the active display workspace state."));
   }
 
@@ -188,6 +214,10 @@ auto execute_workspace_request(
       detail::plan_workspace_request(request, bounds.current_index, bounds.num_spaces);
   if (!motion.should_execute) {
     return {};
+  }
+
+  if (!detail::ensure_cursor_on_display(synthetic_source, display_bounds)) {
+    return std::unexpected(runtime_error("Failed to move the cursor to the active display."));
   }
 
   if (!post_swipe_sequence(synthetic_source, motion.direction, motion.repeat_count)) {

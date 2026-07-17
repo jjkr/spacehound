@@ -88,6 +88,12 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
     std::size_t current_index,
     std::size_t display_count) noexcept -> display_switch_plan;
 
+[[nodiscard]] auto cursor_anchor_point(CGRect display_bounds) noexcept -> CGPoint;
+
+[[nodiscard]] auto ensure_cursor_on_display(
+    cg::event_source_view synthetic_source,
+    CGRect display_bounds) noexcept -> bool;
+
 [[nodiscard]] auto find_frontmost_window_index_on_display(
     std::span<const window_record> windows,
     CGRect target_bounds) noexcept -> std::optional<std::size_t>;

@@ -128,6 +128,14 @@ TEST(control_tests, display_switch_plans_relative_and_numbered_targets) {
   EXPECT_EQ(detail::plan_display_request(numbered, 0, 2), detail::display_switch_plan{});
 }
 
+TEST(control_tests, cursor_anchor_uses_the_top_center_of_the_display) {
+  const auto anchor =
+      detail::cursor_anchor_point(make_rect(-1920.0, -200.0, 1920.0, 1080.0));
+
+  EXPECT_DOUBLE_EQ(anchor.x, -960.0);
+  EXPECT_DOUBLE_EQ(anchor.y, -199.0);
+}
+
 TEST(control_tests, display_helpers_sort_find_current_and_pick_frontmost_window) {
   std::vector<detail::display_record> displays{
       {.display_id = 2, .uuid = "display-right", .bounds = make_rect(1920.0, 0.0, 1920.0, 1080.0)},
