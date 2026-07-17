@@ -69,6 +69,13 @@ TEST(control_tests, workspace_motion_plans_relative_moves_and_wraps) {
   EXPECT_EQ(detail::plan_workspace_request(numbered, 1, 4), detail::workspace_motion{});
 }
 
+TEST(control_tests, main_display_identifier_represents_unified_spaces) {
+  EXPECT_TRUE(detail::is_unified_spaces_display_identifier("Main"));
+  EXPECT_FALSE(detail::is_unified_spaces_display_identifier("main"));
+  EXPECT_FALSE(detail::is_unified_spaces_display_identifier(
+      "37D8832A-2D66-02CA-B9F7-8F30A301B230"));
+}
+
 TEST(control_tests, display_switch_plans_relative_and_numbered_targets) {
   const control::display_request left{
       .action = control::display_action::left,

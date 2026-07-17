@@ -106,15 +106,25 @@ auto display_bounds_for_identifier(
 
 auto active_display_space_bounds(
     detail::workspace_bounds &out_bounds,
-    CGRect &out_display_bounds) -> bool {
+    std::optional<CGRect> &out_display_bounds) -> bool {
   const auto connection = cgs::main_connection_id();
   const auto active_display = cgs::copy_active_menu_bar_display_identifier(connection);
   if (!active_display) {
     return false;
   }
 
-  if (!display_bounds_for_identifier(active_display.view(), out_display_bounds)) {
+  const auto active_display_utf8 = active_display.to_utf8();
+  if (!active_display_utf8) {
     return false;
+  }
+
+  out_display_bounds.reset();
+  if (!detail::is_unified_spaces_display_identifier(*active_display_utf8)) {
+    CGRect display_bounds{};
+    if (!display_bounds_for_identifier(active_display.view(), display_bounds)) {
+      return false;
+    }
+    out_display_bounds = display_bounds;
   }
 
   const auto managed_spaces = cgs::copy_managed_display_spaces(connection);
@@ -205,7 +215,7 @@ auto execute_workspace_request(
   }
 
   detail::workspace_bounds bounds{};
-  CGRect display_bounds{};
+  std::optional<CGRect> display_bounds;
   if (!active_display_space_bounds(bounds, display_bounds)) {
     return std::unexpected(state_error("Failed to determine the active display workspace state."));
   }
@@ -216,7 +226,8 @@ auto execute_workspace_request(
     return {};
   }
 
-  if (!detail::ensure_cursor_on_display(synthetic_source, display_bounds)) {
+  if (display_bounds &&
+      !detail::ensure_cursor_on_display(synthetic_source, *display_bounds)) {
     return std::unexpected(runtime_error("Failed to move the cursor to the active display."));
   }
 
@@ -367,6 +378,11 @@ auto execute_system_ui_request(
 }  // namespace
 
 namespace detail {
+
+auto is_unified_spaces_display_identifier(
+    std::string_view display_identifier) noexcept -> bool {
+  return display_identifier == "Main";
+}
 
 auto action_name(const control::request &request) noexcept -> std::string_view {
   return std::visit(

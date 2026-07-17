@@ -72,6 +72,9 @@ struct window_focus_plan final {
 
 [[nodiscard]] auto action_name(const control::request &request) noexcept -> std::string_view;
 
+[[nodiscard]] auto is_unified_spaces_display_identifier(
+    std::string_view display_identifier) noexcept -> bool;
+
 [[nodiscard]] auto plan_workspace_request(
     const control::workspace_request &request,
     std::int64_t current_index,
