@@ -103,8 +103,9 @@ Release inputs use a marketing version `X.Y.Z` and a final-candidate number
 `CFBundleVersion=X.Y.ZfcN`; candidate artifacts use `X.Y.Z-fcN` in their names.
 The exact same ZIP and DMG are first published to beta and later promoted to
 production. Promotion creates the stable `vX.Y.Z` Git tag but does not rebuild
-the app. Published versions and versioned S3 objects are immutable; use a higher
-candidate number or marketing version for corrections.
+the app. A beta-only candidate can be corrected with a higher candidate number.
+After `X.Y.Z` is promoted, that marketing version cannot be reused; corrections
+must use a higher marketing version.
 
 A legacy appcast version written as plain `X.Y.Z` sorts after every `X.Y.ZfcN`.
 If `0.1.0` was already published by the old workflow, start this candidate flow
@@ -168,7 +169,8 @@ appcast, that release is not visible to Sparkle. Confirm the appcast still
 points to the previous version, then remove only the orphaned version prefix
 before retrying. S3 versioning retains removed object versions for recovery.
 Never remove or replace a prefix that has appeared in an appcast; publish a
-higher candidate or marketing version instead.
+higher candidate for a beta-only correction or a higher marketing version after
+production promotion.
 
 Run the local validation suites with:
 

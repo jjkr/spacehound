@@ -19,6 +19,7 @@ export interface UpdateDistributionStackProps extends StackProps {
   readonly domainName: string;
   readonly environmentName: "beta" | "production";
   readonly githubEnvironment: string;
+  readonly githubOidcProviderArn?: string;
   readonly githubRepository: string;
   readonly parentHostedZoneId: string;
 }
@@ -107,10 +108,16 @@ export class UpdateDistributionStack extends Stack {
       });
     }
 
-    const oidcProvider = new iam.OpenIdConnectProvider(this, "GitHubOidcProvider", {
-      clientIds: ["sts.amazonaws.com"],
-      url: "https://token.actions.githubusercontent.com",
-    });
+    const oidcProvider = props.githubOidcProviderArn
+      ? iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
+          this,
+          "GitHubOidcProvider",
+          props.githubOidcProviderArn,
+        )
+      : new iam.OpenIdConnectProvider(this, "GitHubOidcProvider", {
+          clientIds: ["sts.amazonaws.com"],
+          url: "https://token.actions.githubusercontent.com",
+        });
     const publisherRole = new iam.Role(this, "GitHubPublisherRole", {
       assumedBy: new iam.WebIdentityPrincipal(oidcProvider.openIdConnectProviderArn, {
         StringEquals: {

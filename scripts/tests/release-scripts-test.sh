@@ -4,6 +4,7 @@ set -euo pipefail
 
 root_dir=$(cd "${0:A:h}/../.." && pwd)
 validator="${root_dir}/scripts/validate-release-version.sh"
+availability_checker="${root_dir}/scripts/check-release-availability.sh"
 key_pair_validator="${root_dir}/scripts/validate-sparkle-key-pair.swift"
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/spacerabbit-release-tests.XXXXXX")
 function cleanup() {
@@ -30,6 +31,28 @@ expect_failure "${validator}" 1.2.3 1.2.4fc1
 expect_failure "${validator}" 1.2.3 1.2.3fc0
 expect_failure "${validator}" 1.2.3 1.2.3fc256
 expect_failure "${validator}" 1.2.3 1.2.3fc01
+
+mkdir -p "${test_dir}/bin"
+cat > "${test_dir}/bin/gh" <<'EOF'
+#!/bin/zsh
+case "${MOCK_GH_RESULT:-available}" in
+  available|exists|unknown) print -r -- "${MOCK_GH_RESULT:-available}" ;;
+  error) exit 1 ;;
+esac
+EOF
+chmod +x "${test_dir}/bin/gh"
+
+checker_path="${test_dir}/bin:${PATH}"
+[[ "$(env PATH="${checker_path}" MOCK_GH_RESULT=available \
+  "${availability_checker}" animaslabs/spacerabbit 1.2.3)" == "v1.2.3 is available" ]]
+expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=exists \
+  "${availability_checker}" animaslabs/spacerabbit 1.2.3
+expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=unknown \
+  "${availability_checker}" animaslabs/spacerabbit 1.2.3
+expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=error \
+  "${availability_checker}" animaslabs/spacerabbit 1.2.3
+expect_failure "${availability_checker}" invalid-repository 1.2.3
+expect_failure "${availability_checker}" animaslabs/spacerabbit 1.2
 
 cat > "${test_dir}/appcast.xml" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>

@@ -3,7 +3,10 @@ import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { UpdateDistributionStack } from "../lib/update-distribution-stack.js";
 
-function template(environmentName: "beta" | "production" = "production"): Template {
+function template(
+  environmentName: "beta" | "production" = "production",
+  githubOidcProviderArn?: string,
+): Template {
   const app = new App();
   const domainName = environmentName === "beta"
     ? "beta-updates.getspacerabbit.com"
@@ -14,6 +17,7 @@ function template(environmentName: "beta" | "production" = "production"): Templa
     env: { account: "123456789012", region: "us-east-1" },
     environmentName,
     githubEnvironment: environmentName === "beta" ? "beta" : "production",
+    githubOidcProviderArn,
     githubRepository: "animaslabs/spacerabbit",
     parentHostedZoneId: "Z0123456789EXAMPLE",
   });
@@ -79,6 +83,23 @@ describe("SpaceRabbit update distribution", () => {
                   "repo:animaslabs/spacerabbit:environment:beta",
               },
             },
+          }),
+        ]),
+      }),
+    });
+  });
+
+  it("imports an existing account-level GitHub OIDC provider when configured", () => {
+    const providerArn =
+      "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com";
+    const importedTemplate = template("production", providerArn);
+
+    expect(importedTemplate.findResources("Custom::AWSCDKOpenIdConnectProvider")).toEqual({});
+    importedTemplate.hasResourceProperties("AWS::IAM::Role", {
+      AssumeRolePolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Principal: { Federated: providerArn },
           }),
         ]),
       }),

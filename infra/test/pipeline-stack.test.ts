@@ -11,6 +11,8 @@ describe("SpaceRabbit infrastructure pipeline", () => {
         account: "499246566000",
         domainName: "beta-updates.getspacerabbit.com",
         githubEnvironment: "beta",
+        githubOidcProviderArn:
+          "arn:aws:iam::499246566000:oidc-provider/token.actions.githubusercontent.com",
         name: "beta",
       },
       githubBranch: "main",
@@ -23,6 +25,8 @@ describe("SpaceRabbit infrastructure pipeline", () => {
         account: "772699011759",
         domainName: "updates.getspacerabbit.com",
         githubEnvironment: "production",
+        githubOidcProviderArn:
+          "arn:aws:iam::772699011759:oidc-provider/token.actions.githubusercontent.com",
         name: "production",
       },
       region: "us-east-1",

@@ -27,6 +27,15 @@ unrelated and is not changed by these stacks.
    `parentHostedZoneId` and `githubConnectionArn`, replacing the empty
    placeholders, and commit them. They must be committed because the pipeline's
    future self-mutation runs synth from the repository.
+5. If a workload account already has the GitHub Actions OIDC provider, set that
+   account's `betaGitHubOidcProviderArn` or `prodGitHubOidcProviderArn` value in
+   `infra/cdk.json`. For example, the production ARN is
+   `arn:aws:iam::772699011759:oidc-provider/token.actions.githubusercontent.com`.
+   Leave the value empty when the stack should create the provider.
+
+An imported provider remains owned by whatever originally created it. Keep that
+resource in place; do not delete its old owning stack until the provider has
+been migrated to durable account-level ownership.
 
 Each workload stack creates its own child hosted zone. A narrowly scoped role in
 the infra account lets the workload accounts write only the NS delegation for

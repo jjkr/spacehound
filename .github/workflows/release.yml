@@ -92,6 +92,9 @@ jobs:
             exit 1
           }
 
+      - name: Reject an already-promoted marketing version
+        run: ./scripts/check-release-availability.sh "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
+
       - name: Configure beta AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
@@ -325,6 +328,9 @@ jobs:
           [[ -n "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@*[local-name()="edSignature"])' "${appcast}")" ]]
           grep -q '<!-- sparkle-signatures:' "${appcast}"
 
+      - name: Recheck marketing version availability
+        run: ./scripts/check-release-availability.sh "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
+
       - name: Configure production AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
@@ -370,10 +376,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="v${RELEASE_VERSION}"
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            echo "::error::GitHub release ${tag} already exists"
-            exit 1
-          fi
+          ./scripts/check-release-availability.sh "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
           gh release create "${tag}" \
             "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
             "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
