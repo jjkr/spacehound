@@ -222,8 +222,8 @@ before significant marketing.
 
 ### Menu-bar lifecycle
 
-- Add an optional **Launch at Login** setting using the current supported macOS
-  API.
+- Verify **Launch at login** registration, approval, disabling, and persistence
+  using an installed signed build.
 - Test app relaunch after update, login, crash, sleep/wake, and Fast User
   Switching.
 - Ensure the status item remains understandable when the menu bar is crowded.
@@ -369,6 +369,7 @@ Use this checklist for every public release.
 - [ ] Hotkey recording and conflict handling passed.
 - [ ] Fast swipe boundaries passed.
 - [ ] Sleep/wake and display hot-plug passed.
+- [ ] Launch at login enable, approval, login launch, and disable flows passed.
 - [ ] CPU, memory, and energy impact were checked during extended use.
 - [ ] VoiceOver and keyboard-only Settings operation passed.
 

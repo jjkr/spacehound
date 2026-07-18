@@ -1,5 +1,6 @@
 #import "SRSettingsWindowController.h"
 
+#import "SRLoginItemManager.h"
 #import "SRSettingsStore.h"
 
 #pragma mark - Shortcut vocabulary helpers
@@ -557,6 +558,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 @interface SRSettingsWindowController ()
 
 @property(nonatomic, strong) NSTextField *settingsPathField;
+@property(nonatomic, strong) NSSwitch *launchAtLoginButton;
 @property(nonatomic, strong) NSSwitch *workspaceWrapButton;
 @property(nonatomic, strong) NSSwitch *displayWrapButton;
 @property(nonatomic, strong) NSSwitch *trayScrollButton;
@@ -625,6 +627,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   rootStack.spacing = 20.0;
 
   // General section.
+  self.launchAtLoginButton = [self makeSwitch];
   self.workspaceWrapButton = [self makeSwitch];
   self.displayWrapButton = [self makeSwitch];
   self.trayScrollButton = [self makeSwitch];
@@ -639,6 +642,9 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                                                subtitle:@"Reverse the scroll direction for switching."];
 
   NSArray<NSView *> *generalRows = @[
+    [self toggleRowForSwitch:self.launchAtLoginButton
+                       title:@"Launch at login"
+                    subtitle:@"Automatically open SpaceRabbit when you sign in."],
     [self toggleRowForSwitch:self.workspaceWrapButton
                        title:@"Wrap workspace navigation"
                     subtitle:@"Loop back to the first workspace after the last."],
@@ -955,6 +961,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
   self.settingsPathField.stringValue = settingsURL.path ?: @"";
   [self applyDocumentToControls:document];
+  [self reloadLaunchAtLoginState];
   self.statusLabel.stringValue = @"";
 }
 
@@ -995,7 +1002,61 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     }
   }
 
+  const BOOL launchAtLoginEnabled =
+      (self.launchAtLoginButton.state == NSControlStateValueOn);
+  NSError *loginItemError = nil;
+  const BOOL loginItemChanged =
+      [SRLoginItemManager setEnabled:launchAtLoginEnabled error:&loginItemError];
+  const SRLoginItemStatus loginItemStatus = [SRLoginItemManager status];
+  [self reloadLaunchAtLoginState];
+
+  if (launchAtLoginEnabled && loginItemStatus == SRLoginItemStatusRequiresApproval) {
+    self.statusLabel.stringValue = @"Saved. Launch at login requires approval.";
+    [self presentLaunchAtLoginApproval];
+    return;
+  }
+
+  const BOOL loginItemMatchesRequestedState = launchAtLoginEnabled
+      ? loginItemStatus == SRLoginItemStatusEnabled
+      : (loginItemStatus == SRLoginItemStatusNotRegistered ||
+         loginItemStatus == SRLoginItemStatusNotFound);
+  if (!loginItemChanged || !loginItemMatchesRequestedState) {
+    self.statusLabel.stringValue = @"Settings saved, but launch at login could not be updated.";
+    [self presentSettingsError:loginItemError ?:
+        [NSError errorWithDomain:@"com.animaslabs.SpaceRabbit.LoginItem"
+                            code:1
+                        userInfo:@{
+                          NSLocalizedDescriptionKey :
+                              @"Launch at login could not be updated."
+                        }]];
+    return;
+  }
+
   self.statusLabel.stringValue = @"Saved and applied.";
+}
+
+- (void)reloadLaunchAtLoginState {
+  const SRLoginItemStatus status = [SRLoginItemManager status];
+  const BOOL isRegistered =
+      status == SRLoginItemStatusEnabled || status == SRLoginItemStatusRequiresApproval;
+  self.launchAtLoginButton.state = isRegistered ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)presentLaunchAtLoginApproval {
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.alertStyle = NSAlertStyleInformational;
+  alert.messageText = @"Approve SpaceRabbit in Login Items";
+  alert.informativeText =
+      @"macOS requires your approval before SpaceRabbit can launch automatically. "
+       "Open Login Items and enable SpaceRabbit.";
+  [alert addButtonWithTitle:@"Open Login Items"];
+  [alert addButtonWithTitle:@"Not Now"];
+  [alert beginSheetModalForWindow:self.window
+                completionHandler:^(NSModalResponse returnCode) {
+                  if (returnCode == NSAlertFirstButtonReturn) {
+                    [SRLoginItemManager openSystemSettings];
+                  }
+                }];
 }
 
 - (void)revealSettingsFile:(id)sender {

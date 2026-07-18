@@ -125,6 +125,7 @@ without losing its binding.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
+| **Launch at login** | Automatically open SpaceRabbit when you sign in. | Off |
 | **Wrap workspace navigation** | Loop back to the first Space after the last (and vice-versa). | Off |
 | **Wrap display navigation** | Loop across the left and right display edges. | Off |
 | **Enable tray scroll switching** | Scroll over the menu bar icon to change Spaces. | On |
@@ -134,6 +135,10 @@ without losing its binding.
 Changes take effect when you press **Save**. **Reload** discards unsaved edits and
 re-reads the file from disk, and **Reveal in Finder** opens the settings file's
 location.
+
+The **Launch at login** setting is managed by macOS and does not live in
+`settings.json`. If macOS requires approval, SpaceRabbit offers to open **System
+Settings › General › Login Items**.
 
 ## Where settings are stored
 

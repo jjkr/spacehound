@@ -24,6 +24,8 @@ Key source files:
   (toggles and shortcut recorders).
 - `SpaceRabbitApp/Sources/SRSettingsStore.mm` — reads/writes `settings.json` and
   defines the canonical list of hotkey actions.
+- `SpaceRabbitApp/Sources/SRLoginItemManager.m` — manages launch-at-login state
+  through macOS Service Management.
 - `SpaceRabbitApp/Sources/SRPermissions.m` — Accessibility access checks.
 - `spacerabbit-core/` — the C++ runtime that performs Space/display/window
   switching. See `spacerabbit-core/docs/` for the settings schema and API notes.
