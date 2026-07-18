@@ -7,8 +7,8 @@ options:
 
 settings:
   base:
-    CURRENT_PROJECT_VERSION: 0.1.0fc1
-    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 0.3.0fc1
+    MARKETING_VERSION: 0.3.0
     CLANG_ENABLE_OBJC_ARC: YES
     SPARKLE_FEED_URL: https://updates.getspacerabbit.com/appcast.xml
     SPARKLE_BETA_FEED_URL: https://beta-updates.getspacerabbit.com/appcast.xml
@@ -71,7 +71,7 @@ targets:
 
           generated_dir="${DERIVED_FILE_DIR}/spacerabbit-generated/include/spacerabbit"
           generated_header_path="${generated_dir}/version.hpp"
-          marketing_version="${MARKETING_VERSION:-0.1.0}"
+          marketing_version="${MARKETING_VERSION:-0.3.0}"
 
           major=0
           minor=0

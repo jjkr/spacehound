@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.30)
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum supported macOS version" FORCE)
 
-project(spacerabbit VERSION 0.1.0 LANGUAGES CXX OBJCXX)
+project(spacerabbit VERSION 0.3.0 LANGUAGES CXX OBJCXX)
 
 if(NOT APPLE)
   message(FATAL_ERROR "spacerabbit currently supports macOS only.")
