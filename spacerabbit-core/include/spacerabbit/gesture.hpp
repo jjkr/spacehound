@@ -184,6 +184,8 @@ inline void write_u32_le(std::uint8_t *bytes, std::uint32_t value) noexcept {
     phase gesture_phase,
     direction swipe_direction,
     const swipe_options &options) noexcept -> cg::event {
+  const auto source_user_data =
+      seed_event.integer_field(kCGEventSourceUserData);
   const auto serialized = seed_event.create_data();
   if (!serialized) {
     return {};
@@ -229,7 +231,11 @@ inline void write_u32_le(std::uint8_t *bytes, std::uint32_t value) noexcept {
     return {};
   }
 
-  return cg::event::from_data(cf::view<CFDataRef>{data.get()});
+  auto event = cg::event::from_data(cf::view<CFDataRef>{data.get()});
+  if (event) {
+    event.set_integer_field(kCGEventSourceUserData, source_user_data);
+  }
+  return event;
 }
 
 }  // namespace detail

@@ -196,4 +196,21 @@ TEST(gesture_tests, create_swipe_event_embeds_raw_gesture_payload) {
   EXPECT_EQ(gesture::detail::read_u16_be(end_bytes.data() + end_offset), 96U);
 }
 
+TEST(gesture_tests, reconstructed_swipe_preserves_source_user_data) {
+  constexpr std::int64_t marker = 0x5352544150494e47LL;
+  const auto seed_event = make_event();
+  ASSERT_TRUE(seed_event);
+  gesture::populate_swipe_event(
+      seed_event.view(), gesture::phase::begin, gesture::direction::right);
+  seed_event.set_integer_field(kCGEventSourceUserData, marker);
+
+  const auto event = gesture::detail::add_raw_gesture_payload(
+      seed_event.view(),
+      gesture::phase::begin,
+      gesture::direction::right,
+      gesture::swipe_options{});
+  ASSERT_TRUE(event);
+  EXPECT_EQ(event.integer_field(kCGEventSourceUserData), marker);
+}
+
 }  // namespace
