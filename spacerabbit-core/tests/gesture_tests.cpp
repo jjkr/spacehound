@@ -2,7 +2,9 @@
 
 #include <ApplicationServices/ApplicationServices.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include <spacerabbit/gesture.hpp>
 
@@ -152,6 +154,46 @@ TEST(gesture_tests, create_swipe_event_returns_populated_event) {
       static_cast<std::int64_t>(gesture::phase::update));
   EXPECT_EQ(event.integer_field(cg::gesture_type_field), 2);
   EXPECT_NEAR(event.double_field(cg::gesture_delta_field), -0.0001, 1e-6);
+}
+
+TEST(gesture_tests, create_swipe_event_embeds_raw_gesture_payload) {
+  const auto begin_event = gesture::create_swipe_event(
+      cg::event_source_view{},
+      gesture::phase::begin,
+      gesture::direction::right);
+  ASSERT_TRUE(begin_event);
+
+  const auto begin_data = begin_event.create_data();
+  ASSERT_TRUE(begin_data);
+  const auto begin_bytes = std::span<const std::uint8_t>{
+      CFDataGetBytePtr(begin_data.get()),
+      static_cast<std::size_t>(CFDataGetLength(begin_data.get())),
+  };
+  std::size_t begin_offset = 0;
+  ASSERT_TRUE(gesture::detail::find_serialized_field_tag(
+      begin_bytes,
+      gesture::detail::raw_gesture_field_id,
+      begin_offset));
+  EXPECT_EQ(gesture::detail::read_u16_be(begin_bytes.data() + begin_offset), 68U);
+
+  const auto end_event = gesture::create_swipe_event(
+      cg::event_source_view{},
+      gesture::phase::end,
+      gesture::direction::left);
+  ASSERT_TRUE(end_event);
+
+  const auto end_data = end_event.create_data();
+  ASSERT_TRUE(end_data);
+  const auto end_bytes = std::span<const std::uint8_t>{
+      CFDataGetBytePtr(end_data.get()),
+      static_cast<std::size_t>(CFDataGetLength(end_data.get())),
+  };
+  std::size_t end_offset = 0;
+  ASSERT_TRUE(gesture::detail::find_serialized_field_tag(
+      end_bytes,
+      gesture::detail::raw_gesture_field_id,
+      end_offset));
+  EXPECT_EQ(gesture::detail::read_u16_be(end_bytes.data() + end_offset), 96U);
 }
 
 }  // namespace
