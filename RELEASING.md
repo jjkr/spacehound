@@ -44,9 +44,30 @@ the GitHub user `jjkr` to promote a candidate.
 
 ## 1. Prepare the release
 
-Choose a marketing version and start its candidate number at `1`. Confirm the
-desired commit is on `main`, the branch is synchronized with GitHub, and the
-working tree is clean:
+Choose a marketing version and start its candidate number at `1`. Copy the
+release-note template to a file named for that marketing version, write the
+user-facing notes, and remove the `RELEASE_NOTES_PLACEHOLDER` comment:
+
+```sh
+cp release-notes/TEMPLATE.md release-notes/v0.3.0.md
+```
+
+Use second-level headings in the authored file; the workflow adds the release
+title. Commit the notes with the release changes so they can be reviewed and so
+the candidate commit permanently records what was published.
+
+Preview and validate the beta and production note files locally:
+
+```sh
+./scripts/prepare-release-notes.sh \
+  0.3.0 \
+  0.3.0fc1 \
+  release-notes/v0.3.0.md \
+  build/release-notes-preview
+```
+
+Confirm the desired commit is on `main`, the branch is synchronized with
+GitHub, and the working tree is clean:
 
 ```sh
 git switch main
@@ -101,7 +122,8 @@ Save the numeric candidate run ID. A successful run publishes:
 - Immutable beta artifacts under `releases/vX.Y.Z-fcN/`.
 - Beta `latest` aliases and the beta appcast.
 - A retained GitHub Actions artifact named `SpaceRabbit-X.Y.Z-fcN` containing
-  the candidate and its production appcast. It is retained for 30 days.
+  the candidate, authored release notes, and production appcast. It is retained
+  for 30 days.
 
 ## 3. Verify the beta
 

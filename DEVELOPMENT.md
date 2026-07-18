@@ -87,6 +87,8 @@ includes:
 - `.github/workflows/release.yml` to build one notarized candidate and publish it
   to beta, plus `.github/workflows/promote-release.yml` to manually approve and
   promote those exact bytes.
+- `release-notes/vX.Y.Z.md` files for reviewed, user-facing Sparkle and GitHub
+  Release notes. Copy `release-notes/TEMPLATE.md` when preparing a version.
 - `infra/` for the self-mutating CDK Pipeline and independent beta/production
   stacks. See
   [`infra/README.md`](infra/README.md) for the one-time setup.

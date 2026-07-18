@@ -14,7 +14,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
 
 # Candidate builds and manual promotions share this lock so neither mutable feed
@@ -48,7 +48,6 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.DEVELOPMENT_TEAM }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
 
@@ -86,6 +85,12 @@ jobs:
 
           ./scripts/validate-release-version.sh \
             "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" >/dev/null
+          release_notes_path="release-notes/v${RELEASE_VERSION}.md"
+          ./scripts/prepare-release-notes.sh \
+            "${RELEASE_VERSION}" \
+            "${RELEASE_BUILD_VERSION}" \
+            "${release_notes_path}" \
+            "${RUNNER_TEMP}/release-notes-validation" >/dev/null
           ./scripts/tests/release-scripts-test.sh
           [[ -d spacerabbit-core ]] || {
             echo "::error::Expected spacerabbit-core/ sources in this repository."
@@ -144,26 +149,14 @@ jobs:
       - name: Build, sign, and notarize candidate once
         run: ./scripts/package-release.sh
 
-      - name: Generate release notes
+      - name: Prepare authored release notes
         run: |
           set -euo pipefail
-          mkdir -p build/dist/beta build/dist/production
-          notes_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
-          gh api \
-            --method POST \
-            "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-            -f tag_name="v${RELEASE_VERSION}" \
-            -f target_commitish="${GITHUB_SHA}" \
-            --jq .body > build/generated-release-notes.md
-          {
-            printf '# SpaceRabbit %s (final candidate %s)\n\n' \
-              "${RELEASE_VERSION}" "${{ inputs.candidate }}"
-            cat build/generated-release-notes.md
-          } > "build/dist/beta/${notes_name}"
-          {
-            printf '# SpaceRabbit %s\n\n' "${RELEASE_VERSION}"
-            cat build/generated-release-notes.md
-          } > "build/dist/production/${notes_name}"
+          ./scripts/prepare-release-notes.sh \
+            "${RELEASE_VERSION}" \
+            "${RELEASE_BUILD_VERSION}" \
+            "release-notes/v${RELEASE_VERSION}.md" \
+            build/dist
 
       - name: Generate and verify beta and production appcasts
         env:

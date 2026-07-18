@@ -5,6 +5,7 @@ set -euo pipefail
 root_dir=$(cd "${0:A:h}/../.." && pwd)
 validator="${root_dir}/scripts/validate-release-version.sh"
 availability_checker="${root_dir}/scripts/check-release-availability.sh"
+notes_preparer="${root_dir}/scripts/prepare-release-notes.sh"
 key_pair_validator="${root_dir}/scripts/validate-sparkle-key-pair.swift"
 candidate_workflow="${root_dir}/.github/workflows/release.yml"
 promotion_workflow="${root_dir}/.github/workflows/promote-release.yml"
@@ -56,12 +57,36 @@ expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=error \
 expect_failure "${availability_checker}" invalid-repository 1.2.3
 expect_failure "${availability_checker}" animaslabs/spacerabbit 1.2
 
+cat > "${test_dir}/notes.md" <<'EOF'
+## Highlights
+
+SpaceRabbit is faster than ever.
+EOF
+"${notes_preparer}" \
+  1.2.3 1.2.3fc4 "${test_dir}/notes.md" "${test_dir}/dist" >/dev/null
+beta_notes="${test_dir}/dist/beta/SpaceRabbit-1.2.3-fc4-arm64.md"
+production_notes="${test_dir}/dist/production/SpaceRabbit-1.2.3-fc4-arm64.md"
+grep -q '^# SpaceRabbit 1.2.3 (final candidate 4)$' "${beta_notes}"
+grep -q '^# SpaceRabbit 1.2.3$' "${production_notes}"
+grep -q '^SpaceRabbit is faster than ever\.$' "${beta_notes}"
+grep -q '^SpaceRabbit is faster than ever\.$' "${production_notes}"
+expect_failure "${notes_preparer}" \
+  1.2.3 1.2.3fc4 "${test_dir}/missing.md" "${test_dir}/missing-dist"
+print -r -- '<!-- RELEASE_NOTES_PLACEHOLDER -->' > "${test_dir}/placeholder.md"
+expect_failure "${notes_preparer}" \
+  1.2.3 1.2.3fc4 "${test_dir}/placeholder.md" "${test_dir}/placeholder-dist"
+
 if grep -q '^  promote:' "${candidate_workflow}"; then
   echo "error: candidate workflow must not contain an automatic promotion job" >&2
   exit 1
 fi
 grep -q 'group: spacerabbit-release' "${candidate_workflow}"
 grep -q 'Candidate run ID:.*GITHUB_RUN_ID' "${candidate_workflow}"
+grep -q 'release-notes/v${RELEASE_VERSION}.md' "${candidate_workflow}"
+if grep -q 'generate-notes' "${candidate_workflow}"; then
+  echo "error: candidate workflow must use authored release notes" >&2
+  exit 1
+fi
 grep -q 'group: spacerabbit-release' "${promotion_workflow}"
 grep -q 'GITHUB_ACTOR.*jjkr' "${promotion_workflow}"
 grep -q 'GITHUB_REF.*refs/heads/main' "${promotion_workflow}"
