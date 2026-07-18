@@ -36,10 +36,6 @@ You don't need to relaunch: SpaceRabbit starts working automatically the moment
 access is granted. If you skip the prompt, the menu bar shows a ⚠️ badge and a
 **Grant Accessibility Access…** item you can use later.
 
-macOS may also ask for **Input Monitoring** access (under the same Privacy &
-Security settings) so SpaceRabbit can respond to your keyboard shortcuts. Turn it
-on if prompted.
-
 ## Features
 
 - **Instant Space switching** — jump to any of your first 10 Spaces by number, or

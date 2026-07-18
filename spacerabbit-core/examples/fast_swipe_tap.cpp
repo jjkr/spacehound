@@ -266,17 +266,6 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  if (!cg::preflight_listen_event_access()) {
-    std::cerr << "Input Monitoring permission is required for the event tap.\n";
-    (void)cg::request_listen_event_access();
-    if (!cg::preflight_listen_event_access()) {
-      std::cerr
-          << "Grant Input Monitoring in System Settings > Privacy & Security > "
-          << "Input Monitoring, then try again.\n";
-      return EXIT_FAILURE;
-    }
-  }
-
   tap_context context{};
   context.synthetic_source =
       cg::event_source::create(kCGEventSourceStateHIDSystemState);

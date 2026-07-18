@@ -216,7 +216,7 @@ TEST(cg_tests, display_and_window_helpers_report_system_state) {
   EXPECT_TRUE(cf::is<CFArrayRef>(cf::view{static_cast<CFTypeRef>(window_info.get())}));
 }
 
-TEST(cg_tests, constants_and_request_helper_are_addressable) {
+TEST(cg_tests, constants_and_event_helpers_are_addressable) {
   EXPECT_EQ(cg::window_number_key.get(), kCGWindowNumber);
   EXPECT_EQ(cg::window_owner_pid_key.get(), kCGWindowOwnerPID);
   EXPECT_EQ(cg::window_layer_key.get(), kCGWindowLayer);
@@ -245,16 +245,12 @@ TEST(cg_tests, constants_and_request_helper_are_addressable) {
   const auto create_view_data = &cg::event_view::create_data;
   const auto from_data = &cg::event::from_data;
   const auto create_source_from_event = &cg::event::create_source_from_event;
-  const auto preflight_access = &cg::preflight_listen_event_access;
-  const auto request_access = &cg::request_listen_event_access;
   ASSERT_NE(create_event, nullptr);
   ASSERT_NE(copy_event, nullptr);
   ASSERT_NE(retain_event, nullptr);
   EXPECT_TRUE(create_view_data != nullptr);
   ASSERT_NE(from_data, nullptr);
   ASSERT_NE(create_source_from_event, nullptr);
-  ASSERT_NE(preflight_access, nullptr);
-  ASSERT_NE(request_access, nullptr);
 }
 
 }  // namespace

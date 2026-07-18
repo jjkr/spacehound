@@ -572,16 +572,6 @@ inline void post_tap_event(CGEventTapProxy proxy, event_view value) noexcept {
   CGEventTapPostEvent(proxy, value.get());
 }
 
-/// Returns whether input-monitoring access is already granted via `CGPreflightListenEventAccess`.
-[[nodiscard]] inline auto preflight_listen_event_access() noexcept -> bool {
-  return CGPreflightListenEventAccess();
-}
-
-/// Requests input-monitoring access via `CGRequestListenEventAccess`.
-[[nodiscard]] inline auto request_listen_event_access() noexcept -> bool {
-  return CGRequestListenEventAccess();
-}
-
 /// Warps the cursor position via `CGWarpMouseCursorPosition`.
 [[nodiscard]] inline auto warp_mouse_cursor_position(CGPoint position) noexcept -> CGError {
   return CGWarpMouseCursorPosition(position);

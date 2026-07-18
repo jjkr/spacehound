@@ -384,18 +384,6 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  if (!CGPreflightListenEventAccess()) {
-    fprintf(stderr, "Input Monitoring permission is required for the event tap.\n");
-    (void)CGRequestListenEventAccess();
-    if (!CGPreflightListenEventAccess()) {
-      fprintf(
-          stderr,
-          "Grant Input Monitoring in System Settings > Privacy & Security > "
-          "Input Monitoring, then try again.\n");
-      return EXIT_FAILURE;
-    }
-  }
-
   context.tap_ref = NULL;
   context.synthetic_source_ref = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
   if (context.synthetic_source_ref == NULL) {

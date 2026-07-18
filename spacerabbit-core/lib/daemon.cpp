@@ -876,18 +876,6 @@ auto runtime::start(const options &options) -> std::expected<void, error> {
         "Security > Accessibility and try again."));
   }
 
-  if (!cg::preflight_listen_event_access()) {
-    if (options.request_input_monitoring_if_needed) {
-      (void)cg::request_listen_event_access();
-    }
-
-    if (!cg::preflight_listen_event_access()) {
-      return std::unexpected(permission_error(
-          "Input Monitoring permission is required. Grant it in System Settings > Privacy & "
-          "Security > Input Monitoring and try again."));
-    }
-  }
-
   auto started = std::make_unique<impl>();
   started->options = options;
   started->settings_path = *settings_path;

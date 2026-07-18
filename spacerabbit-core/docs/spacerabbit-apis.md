@@ -32,7 +32,7 @@ The app uses both public and private macOS APIs:
 | Framework / area | Public? | What SpaceRabbit uses it for |
 | --- | --- | --- |
 | Accessibility / ApplicationServices | Public | Permission checks, reading Dock accessibility hierarchy, focusing and raising windows |
-| Core Graphics / Quartz Event Services | Mostly public | Event taps, event posting, display enumeration, window listing, cursor warping, input monitoring permission |
+| Core Graphics / Quartz Event Services | Mostly public | Event taps, event posting, display enumeration, window listing, cursor warping |
 | AppKit | Public | Active Space notifications, app activation, main-screen scale factor |
 | Core Foundation | Public | Run loop integration, dictionaries/arrays/numbers/strings returned by system APIs |
 | libdispatch / GCD | Public | Dispatching window-focus work back to the main thread |
@@ -195,12 +195,6 @@ The app reads standard `CGWindowListCopyWindowInfo` dictionary keys such as:
 - `kCGWindowBounds`
 - `kCGWindowAlpha`
 - `kCGWindowIsOnscreen`
-
-#### Input Monitoring API
-
-- `CGRequestListenEventAccess()`
-  - Requests or confirms input monitoring access for listening to global events.
-  - Used during the permission-request flow.
 
 ### 3. AppKit APIs
 
@@ -387,9 +381,6 @@ The API set above implies some important runtime constraints:
 
 - Accessibility permission is required.
   - Needed for AX reads/writes and for event injection behavior that interacts with other apps.
-
-- Input Monitoring permission is requested.
-  - Needed for the HID event tap and global input listening.
 
 - The app is intentionally not sandboxed.
   - The entitlements files explicitly disable the app sandbox because the private CGS APIs are incompatible with a normal sandboxed setup.

@@ -105,8 +105,6 @@ int main() {
   const auto create_keyboard_event = &spacerabbit::cg::event::create_keyboard;
   const auto active_displays = &spacerabbit::cg::active_displays;
   const auto display_uuid_string = &spacerabbit::cg::display_uuid_string;
-  const auto preflight_listen_access = &spacerabbit::cg::preflight_listen_event_access;
-  const auto request_listen_access = &spacerabbit::cg::request_listen_event_access;
   const auto execute_control = &spacerabbit::control::execute;
   const spacerabbit::gesture::swipe_options swipe_options{};
   const auto swipe_direction = spacerabbit::gesture::direction::left;
@@ -152,8 +150,6 @@ int main() {
   (void)displays;
   (void)active_displays;
   (void)display_uuid_string;
-  (void)preflight_listen_access;
-  (void)request_listen_access;
   (void)execute_control;
   (void)swipe_options;
   (void)swipe_direction;

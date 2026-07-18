@@ -44,7 +44,6 @@ struct observer final {
 
 struct options final {
   std::optional<std::filesystem::path> settings_path_override;
-  bool request_input_monitoring_if_needed = true;
   observer observer{};
 };
 
