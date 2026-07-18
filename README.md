@@ -161,5 +161,6 @@ use **Reveal in Finder** in Settings to find it.
 
 ## Development
 
-Building from source, architecture notes, and release packaging are documented in
-[DEVELOPMENT.md](DEVELOPMENT.md).
+Building from source and architecture notes are documented in
+[DEVELOPMENT.md](DEVELOPMENT.md). Maintainers should use
+[RELEASING.md](RELEASING.md) when publishing a release.
