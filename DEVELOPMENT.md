@@ -80,8 +80,9 @@ includes:
   notarize and staple the DMG.
 - `scripts/generate-appcast.sh` to generate and verify a signed Sparkle appcast
   without exposing the private signing key in process arguments.
-- `.github/workflows/release.yml` to build one notarized candidate, publish it to
-  beta, hold for production approval, and promote those exact bytes.
+- `.github/workflows/release.yml` to build one notarized candidate and publish it
+  to beta, plus `.github/workflows/promote-release.yml` to manually approve and
+  promote those exact bytes.
 - `infra/` for the self-mutating CDK Pipeline and independent beta/production
   stacks. See
   [`infra/README.md`](infra/README.md) for the one-time setup.
@@ -113,8 +114,8 @@ at `0.1.1fc1`, not `0.1.0fc1`.
 
 ### Release secrets
 
-Set these secrets on the protected `beta` GitHub environment, because the beta
-job is the only job that builds, signs, notarizes, and creates appcasts:
+Set these secrets on the `beta` GitHub environment, because the beta job is the
+only job that builds, signs, notarizes, and creates appcasts:
 
 - `BUILD_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
 - `P12_PASSWORD`: password for the `.p12`
@@ -134,10 +135,10 @@ using the outputs from that environment's CDK stack:
 - Variable `AWS_RELEASE_REGION`: `us-east-1`.
 
 The production environment does not need the certificate, Apple credentials,
-or Sparkle private key. Configure production with required reviewers; approving
-that environment is the release promotion gate. Repository-level secrets may
-be used instead, but keeping the signing material scoped to `beta` makes the
-build-once boundary explicit.
+or Sparkle private key. The separately dispatched **Promote release** workflow
+is the release gate and rejects any actor other than `jjkr`. Repository-level
+secrets may be used instead, but keeping the signing material scoped to `beta`
+makes the build-once boundary explicit.
 
 Keep an encrypted offline backup of the Sparkle private key. Do not print it,
 place it in command arguments, or commit it. Losing it prevents new signed-feed
@@ -159,10 +160,12 @@ make package-release
 
 Dispatch **Release candidate** from the `main` branch with `version=X.Y.Z` and
 `candidate=N`. The workflow publishes beta first. Testers enable **Receive Beta
-Updates** in the menu bar and validate the candidate. Approving the pending
-production environment job verifies and promotes the downloaded candidate,
-publishes the production appcast, and creates `vX.Y.Z` plus its GitHub Release.
-Reject or cancel the approval to leave the candidate beta-only.
+Updates** in the menu bar and validate the candidate. When it passes, dispatch
+**Promote release** with the successful candidate run ID and the same version
+and candidate number. Promotion is restricted to `jjkr`; it checks out the
+candidate commit, downloads and verifies that run's retained artifact, publishes
+the production appcast, and creates `vX.Y.Z` plus its GitHub Release. Do not run
+promotion to leave the candidate beta-only.
 
 If a job fails after uploading versioned objects but before publishing the
 appcast, that release is not visible to Sparkle. Confirm the appcast still

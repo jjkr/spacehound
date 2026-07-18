@@ -1,0 +1,226 @@
+name: Promote release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: "Successful Release candidate workflow run ID"
+        required: true
+        type: string
+      version:
+        description: "Marketing version (X.Y.Z)"
+        required: true
+        type: string
+      candidate:
+        description: "Final-candidate number (1-255)"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+
+concurrency:
+  group: spacerabbit-release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote exact beta candidate
+    runs-on: macos-26
+    timeout-minutes: 30
+    environment: production
+    env:
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_BUILD_VERSION: ${{ format('{0}fc{1}', inputs.version, inputs.candidate) }}
+      RELEASE_ARTIFACT_VERSION: ${{ format('{0}-fc{1}', inputs.version, inputs.candidate) }}
+      SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+      AWS_REGION: ${{ vars.AWS_RELEASE_REGION }}
+      AWS_RELEASE_BUCKET: ${{ vars.AWS_RELEASE_BUCKET }}
+      AWS_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
+      AWS_RELEASE_ROLE_ARN: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Authorize promoter and resolve candidate commit
+        id: candidate
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_ACTOR}" != "jjkr" ]]; then
+            echo "::error::Only jjkr may promote a SpaceRabbit release"
+            exit 1
+          fi
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release promotions must be dispatched from the main branch"
+            exit 1
+          fi
+          if [[ ! "${CANDIDATE_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Candidate run ID must be numeric"
+            exit 1
+          fi
+
+          run_json=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${CANDIDATE_RUN_ID}")
+          event=$(jq -r .event <<<"${run_json}")
+          status=$(jq -r .status <<<"${run_json}")
+          conclusion=$(jq -r .conclusion <<<"${run_json}")
+          branch=$(jq -r .head_branch <<<"${run_json}")
+          workflow_path=$(jq -r .path <<<"${run_json}")
+          candidate_sha=$(jq -r .head_sha <<<"${run_json}")
+
+          if [[ "${event}" != "workflow_dispatch" ||
+                "${status}" != "completed" ||
+                "${conclusion}" != "success" ||
+                "${branch}" != "main" ||
+                "${workflow_path}" != ".github/workflows/release.yml" ||
+                ! "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Run ${CANDIDATE_RUN_ID} is not a successful main-branch Release candidate run"
+            exit 1
+          fi
+
+          echo "sha=${candidate_sha}" >> "${GITHUB_OUTPUT}"
+          echo "CANDIDATE_SHA=${candidate_sha}" >> "${GITHUB_ENV}"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.candidate.outputs.sha }}
+
+      - name: Validate promotion inputs
+        run: |
+          set -euo pipefail
+          ./scripts/validate-release-version.sh \
+            "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" >/dev/null
+          ./scripts/check-release-availability.sh \
+            "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
+
+      - name: Download exact beta candidate
+        uses: actions/download-artifact@v7
+        with:
+          name: SpaceRabbit-${{ env.RELEASE_ARTIFACT_VERSION }}
+          path: build/dist
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Verify candidate manifest, signature, ticket, and metadata
+        run: |
+          set -euo pipefail
+          required_vars=(
+            AWS_CLOUDFRONT_DISTRIBUTION_ID
+            AWS_REGION
+            AWS_RELEASE_BUCKET
+            AWS_RELEASE_ROLE_ARN
+            SPARKLE_PUBLIC_ED_KEY
+          )
+          for name in "${required_vars[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing production environment variable: ${name}"
+              exit 1
+            fi
+          done
+
+          shasum -a 256 -c build/dist/release-manifest-SHA256SUMS.txt
+          archive="build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          dmg="build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
+          verify_dir="${RUNNER_TEMP}/spacerabbit-candidate"
+          mkdir -p "${verify_dir}"
+          ditto -x -k "${archive}" "${verify_dir}"
+          app="${verify_dir}/SpaceRabbit.app"
+          codesign --verify --deep --strict --verbose=2 "${app}"
+          spctl --assess --type execute --verbose=4 "${app}"
+          xcrun stapler validate "${app}"
+          codesign --verify --verbose=2 "${dmg}"
+          xcrun stapler validate "${dmg}"
+
+          info="${app}/Contents/Info.plist"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info}")" == "${RELEASE_VERSION}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info}")" == "${RELEASE_BUILD_VERSION}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "${info}")" == 'https://updates.getspacerabbit.com/appcast.xml' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUBetaFeedURL' "${info}")" == 'https://beta-updates.getspacerabbit.com/appcast.xml' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "${info}")" == "${SPARKLE_PUBLIC_ED_KEY}" ]]
+
+          appcast=build/dist/production-appcast.xml
+          xmllint --noout "${appcast}"
+          [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="version"])' "${appcast}")" == "${RELEASE_BUILD_VERSION}" ]]
+          [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="shortVersionString"])' "${appcast}")" == "${RELEASE_VERSION}" ]]
+          expected_archive_url="https://updates.getspacerabbit.com/releases/v${RELEASE_VERSION}/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@url)' "${appcast}")" == "${expected_archive_url}" ]]
+          [[ -n "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@*[local-name()="edSignature"])' "${appcast}")" ]]
+          grep -q '<!-- sparkle-signatures:' "${appcast}"
+
+      - name: Recheck marketing version availability
+        run: ./scripts/check-release-availability.sh "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
+
+      - name: Configure production AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_RELEASE_ROLE_ARN }}
+
+      - name: Check production version ordering
+        run: |
+          set -euo pipefail
+          if aws s3api head-object --bucket "${AWS_RELEASE_BUCKET}" \
+            --key appcast.xml >/dev/null 2>&1; then
+            aws s3 cp "s3://${AWS_RELEASE_BUCKET}/appcast.xml" build/current-production-appcast.xml
+            ./scripts/validate-release-version.sh \
+              "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" \
+              build/current-production-appcast.xml >/dev/null
+          fi
+
+      - name: Publish immutable production artifacts
+        run: |
+          set -euo pipefail
+          release_prefix="releases/v${RELEASE_VERSION}"
+          archive_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          dmg_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
+          checksums_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt"
+          notes_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
+
+          if aws s3api head-object --bucket "${AWS_RELEASE_BUCKET}" \
+            --key "${release_prefix}/${archive_name}" >/dev/null 2>&1; then
+            echo "::error::Production release ${release_prefix} already exists"
+            exit 1
+          fi
+
+          aws s3 cp "build/dist/${archive_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${archive_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type application/zip
+          aws s3 cp "build/dist/${dmg_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${dmg_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type application/x-apple-diskimage
+          aws s3 cp "build/dist/${checksums_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${checksums_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type 'text/plain; charset=utf-8'
+          aws s3 cp "build/dist/production/${notes_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${notes_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type 'text/markdown; charset=utf-8'
+
+      - name: Publish GitHub release mirror
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE_VERSION}"
+          ./scripts/check-release-availability.sh "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
+          gh release create "${tag}" \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
+            --target "${CANDIDATE_SHA}" \
+            --title "${tag}" \
+            --notes-file "build/dist/production/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
+
+      - name: Update production aliases and publish appcast last
+        run: |
+          set -euo pipefail
+          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-arm64.zip" \
+            --cache-control 'no-cache,max-age=0' --content-type application/zip
+          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-arm64.dmg" \
+            --cache-control 'no-cache,max-age=0' --content-type application/x-apple-diskimage
+          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-SHA256SUMS.txt" \
+            --cache-control 'no-cache,max-age=0' --content-type 'text/plain; charset=utf-8'
+          aws s3 cp build/dist/production-appcast.xml "s3://${AWS_RELEASE_BUCKET}/appcast.xml" \
+            --cache-control 'no-cache,max-age=0' --content-type 'application/xml; charset=utf-8'
+          aws cloudfront create-invalidation \
+            --distribution-id "${AWS_CLOUDFRONT_DISTRIBUTION_ID}" \
+            --paths '/appcast.xml' '/releases/latest/*'

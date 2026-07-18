@@ -6,6 +6,8 @@ root_dir=$(cd "${0:A:h}/../.." && pwd)
 validator="${root_dir}/scripts/validate-release-version.sh"
 availability_checker="${root_dir}/scripts/check-release-availability.sh"
 key_pair_validator="${root_dir}/scripts/validate-sparkle-key-pair.swift"
+candidate_workflow="${root_dir}/.github/workflows/release.yml"
+promotion_workflow="${root_dir}/.github/workflows/promote-release.yml"
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/spacerabbit-release-tests.XXXXXX")
 function cleanup() {
   rm -rf "${test_dir}"
@@ -53,6 +55,20 @@ expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=error \
   "${availability_checker}" animaslabs/spacerabbit 1.2.3
 expect_failure "${availability_checker}" invalid-repository 1.2.3
 expect_failure "${availability_checker}" animaslabs/spacerabbit 1.2
+
+if grep -q '^  promote:' "${candidate_workflow}"; then
+  echo "error: candidate workflow must not contain an automatic promotion job" >&2
+  exit 1
+fi
+grep -q 'group: spacerabbit-release' "${candidate_workflow}"
+grep -q 'Candidate run ID:.*GITHUB_RUN_ID' "${candidate_workflow}"
+grep -q 'group: spacerabbit-release' "${promotion_workflow}"
+grep -q 'GITHUB_ACTOR.*jjkr' "${promotion_workflow}"
+grep -q 'GITHUB_REF.*refs/heads/main' "${promotion_workflow}"
+grep -q 'workflow_path.*\.github/workflows/release\.yml' "${promotion_workflow}"
+grep -q 'ref:.*steps\.candidate\.outputs\.sha' "${promotion_workflow}"
+grep -q 'run-id:.*inputs\.candidate_run_id' "${promotion_workflow}"
+grep -q -- '--target.*CANDIDATE_SHA' "${promotion_workflow}"
 
 cat > "${test_dir}/appcast.xml" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>

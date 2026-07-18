@@ -115,8 +115,8 @@ GitHub environment (`beta` or `production`):
 The roles trust only the exact repository plus GitHub environment name. Put the
 Developer ID certificate, notarization credentials, and
 `SPARKLE_ED_PRIVATE_KEY` only in `beta`; production promotes the exact candidate
-artifact and needs no signing secret. Configure required reviewers on the
-production environment.
+artifact and needs no signing secret. Manual production promotion is a separate
+GitHub Actions workflow restricted to the `jjkr` account.
 
 ## Sparkle signing key bootstrap
 
@@ -143,9 +143,11 @@ an encrypted offline backup, then remove every unencrypted temporary copy.
 
 ## Candidate promotion
 
-One workflow dispatch builds `X.Y.ZfcN` once and publishes it at
+Dispatch **Release candidate** to build `X.Y.ZfcN` once and publish it at
 `https://beta-updates.getspacerabbit.com`. Enable **Receive Beta Updates** from
-the app's menu to test it. Production approval downloads the same retained
-GitHub Actions artifact, verifies its checksums, Developer ID signature,
-notarization ticket, bundle metadata, and pre-generated signed appcast, then
-publishes it to `https://updates.getspacerabbit.com` without invoking Xcode.
+the app's menu to test it. After testing, `jjkr` dispatches **Promote release**
+with the successful candidate run ID and matching version inputs. Promotion
+downloads that run's retained artifact, verifies its checksums, Developer ID
+signature, notarization ticket, bundle metadata, candidate commit, and
+pre-generated signed appcast, then publishes it to
+`https://updates.getspacerabbit.com` without invoking Xcode.
