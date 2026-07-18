@@ -98,6 +98,8 @@ jobs:
           }
 
       - name: Reject an already-promoted marketing version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/check-release-availability.sh "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
 
       - name: Configure beta AWS credentials
