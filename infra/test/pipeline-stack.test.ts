@@ -49,6 +49,16 @@ describe("SpaceRabbit infrastructure pipeline", () => {
     });
   });
 
+  it("uses the independently versioned CDK assets CLI", () => {
+    template.hasResourceProperties("AWS::CodeBuild::Project", {
+      Source: Match.objectLike({
+        BuildSpec: Match.stringLikeRegexp(
+          "npm install -g cdk-assets@4\\.6\\.0",
+        ),
+      }),
+    });
+  });
+
   it("keeps production behind manual approval", () => {
     template.hasResourceProperties("AWS::CodePipeline::Pipeline", {
       Stages: Match.arrayWith([

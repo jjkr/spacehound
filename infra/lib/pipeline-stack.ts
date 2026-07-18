@@ -43,7 +43,7 @@ export class PipelineStack extends Stack {
       },
     );
     const pipeline = new CodePipeline(this, "DeliveryPipeline", {
-      cdkAssetsCliVersion: "2.1132.0",
+      cdkAssetsCliVersion: "4.6.0",
       cliVersion: "2.1132.0",
       crossAccountKeys: true,
       pipelineName: "SpaceRabbit-Infrastructure",
