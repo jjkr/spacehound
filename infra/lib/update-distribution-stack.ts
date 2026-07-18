@@ -13,8 +13,10 @@ import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import type { Construct } from "constructs";
+import { UpdateMonitoring } from "./update-monitoring.js";
 
 export interface UpdateDistributionStackProps extends StackProps {
+  readonly bandwidthAlarmGibPerHour: number;
   readonly delegationRoleArn: string;
   readonly domainName: string;
   readonly environmentName: "beta" | "production";
@@ -91,6 +93,7 @@ export class UpdateDistributionStack extends Stack {
       domainNames: [props.domainName],
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+      publishAdditionalMetrics: true,
       additionalBehaviors: {
         "appcast.xml": mutableBehavior,
         "releases/latest/*": mutableBehavior,
@@ -153,7 +156,18 @@ export class UpdateDistributionStack extends Stack {
       ],
     }));
 
+    const monitoring = new UpdateMonitoring(this, "Monitoring", {
+      artifactBucket,
+      bandwidthAlarmGibPerHour: props.bandwidthAlarmGibPerHour,
+      certificate,
+      distribution,
+      domainName: props.domainName,
+      environmentName: props.environmentName,
+    });
+
     new CfnOutput(this, "ArtifactBucketName", { value: artifactBucket.bucketName });
+    new CfnOutput(this, "CanaryName", { value: monitoring.canary.canaryName });
+    new CfnOutput(this, "DashboardName", { value: monitoring.dashboard.dashboardName });
     new CfnOutput(this, "DistributionId", { value: distribution.distributionId });
     new CfnOutput(this, "FeedUrl", { value: `https://${props.domainName}/appcast.xml` });
     new CfnOutput(this, "GitHubPublisherRoleArn", { value: publisherRole.roleArn });

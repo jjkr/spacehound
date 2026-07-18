@@ -1,5 +1,6 @@
 export interface DeliveryEnvironmentConfig {
   readonly account: string;
+  readonly bandwidthAlarmGibPerHour: number;
   readonly domainName: string;
   readonly githubEnvironment: string;
   readonly githubOidcProviderArn?: string;
@@ -43,10 +44,27 @@ function optionalContext(app: ContextReader, key: string): string | undefined {
   return value;
 }
 
+function requiredPositiveNumberContext(app: ContextReader, key: string): number {
+  const value = app.node.tryGetContext(key);
+  const parsed = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.length > 0
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Pass required positive CDK context -c ${key}=VALUE`);
+  }
+  return parsed;
+}
+
 export function deploymentConfig(app: ContextReader): DeploymentConfig {
   return {
     beta: {
       account: requiredContext(app, "betaAccount"),
+      bandwidthAlarmGibPerHour: requiredPositiveNumberContext(
+        app,
+        "betaBandwidthAlarmGibPerHour",
+      ),
       domainName: requiredContext(app, "betaDomainName"),
       githubEnvironment: requiredContext(app, "betaGitHubEnvironment"),
       githubOidcProviderArn: optionalContext(app, "betaGitHubOidcProviderArn"),
@@ -59,6 +77,10 @@ export function deploymentConfig(app: ContextReader): DeploymentConfig {
     parentHostedZoneId: requiredContext(app, "parentHostedZoneId"),
     production: {
       account: requiredContext(app, "prodAccount"),
+      bandwidthAlarmGibPerHour: requiredPositiveNumberContext(
+        app,
+        "prodBandwidthAlarmGibPerHour",
+      ),
       domainName: requiredContext(app, "prodDomainName"),
       githubEnvironment: requiredContext(app, "prodGitHubEnvironment"),
       githubOidcProviderArn: optionalContext(app, "prodGitHubOidcProviderArn"),

@@ -2,6 +2,7 @@
   "app": "npm exec -- tsx bin/update-infrastructure.ts",
   "context": {
     "betaAccount": "499246566000",
+    "betaBandwidthAlarmGibPerHour": 1,
     "betaDomainName": "beta-updates.getspacerabbit.com",
     "betaGitHubEnvironment": "beta",
     "betaGitHubOidcProviderArn": "",
@@ -11,6 +12,7 @@
     "infraAccount": "155091848123",
     "parentHostedZoneId": "Z022719419UF0M8DE169",
     "prodAccount": "772699011759",
+    "prodBandwidthAlarmGibPerHour": 10,
     "prodDomainName": "updates.getspacerabbit.com",
     "prodGitHubEnvironment": "production",
     "prodGitHubOidcProviderArn": "",

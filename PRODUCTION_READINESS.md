@@ -290,17 +290,21 @@ The update infrastructure currently provides:
 - Narrow GitHub OIDC publisher roles scoped to an exact environment.
 - Separate beta and production environments.
 - Immutable versioned paths by workflow convention.
+- Five-minute synthetic validation of both appcasts and their current downloads.
+- Per-environment CloudWatch dashboards and alarms for endpoint health,
+  CloudFront errors and bandwidth, and ACM certificate expiry.
 
 ### Add before or shortly after launch
 
-- External uptime checks for both appcasts and latest DMGs.
-- Alerts for endpoint failure, CloudFront 4xx/5xx spikes, and failed release jobs.
-- AWS cost and bandwidth alarms.
+- Route the existing CloudWatch alarms to a monitored notification channel.
+- Alerts for failed release jobs.
+- AWS cost alarms.
 - CloudFront access logging with an explicit retention and privacy policy.
 - S3 lifecycle rules for old noncurrent object versions.
 - A periodic restore exercise for retained S3 object versions.
-- Monitoring for DNS, ACM certificate, Apple certificate, and GitHub credential
-  failures.
+- Monitoring for Apple certificate and GitHub credential failures. DNS and TLS
+  delivery are already covered by the synthetic checks, and ACM expiry has a
+  dedicated alarm.
 - A documented incident procedure for:
   - Broken or unavailable appcasts.
   - A bad application release.
@@ -423,6 +427,7 @@ The following checks passed on July 18, 2026:
 5. Add structured logs, About/Diagnostics, dSYM retention, and support links.
 6. Add third-party notices, privacy policy, and public security/support contacts.
 7. Execute and record the full supported-OS and display matrix.
-8. Add endpoint monitoring, cost alarms, lifecycle rules, and incident runbooks.
+8. Add alarm notification routing, cost alarms, lifecycle rules, and incident
+   runbooks.
 9. Ship a beta candidate, test update from the prior release, and promote the exact
    approved bytes.

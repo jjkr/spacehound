@@ -15,6 +15,7 @@ export class UpdateDeliveryStage extends Stage {
     super(scope, id, props);
 
     new UpdateDistributionStack(this, "UpdateDistribution", {
+      bandwidthAlarmGibPerHour: props.environmentConfig.bandwidthAlarmGibPerHour,
       delegationRoleArn: props.delegationRoleArn,
       domainName: props.environmentConfig.domainName,
       environmentName: props.environmentConfig.name,

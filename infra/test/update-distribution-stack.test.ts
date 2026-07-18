@@ -12,6 +12,7 @@ function template(
     ? "beta-updates.getspacerabbit.com"
     : "updates.getspacerabbit.com";
   const stack = new UpdateDistributionStack(app, "TestStack", {
+    bandwidthAlarmGibPerHour: environmentName === "beta" ? 1 : 10,
     delegationRoleArn: "arn:aws:iam::155091848123:role/SpaceRabbitDnsDelegationRole",
     domainName,
     env: { account: "123456789012", region: "us-east-1" },
@@ -56,6 +57,90 @@ describe("SpaceRabbit update distribution", () => {
           Match.objectLike({ OriginAccessControlId: Match.anyValue() }),
         ]),
       }),
+    });
+  });
+
+  it("publishes additional CloudFront metrics and validates public endpoints", () => {
+    const betaTemplate = template("beta");
+    betaTemplate.hasResourceProperties("AWS::CloudFront::MonitoringSubscription", {
+      DistributionId: Match.anyValue(),
+      MonitoringSubscription: {
+        RealtimeMetricsSubscriptionConfig: { RealtimeMetricsSubscriptionStatus: "Enabled" },
+      },
+    });
+    betaTemplate.hasResourceProperties("AWS::Synthetics::Canary", {
+      Name: "sr-beta-updates",
+      RunConfig: Match.objectLike({
+        EnvironmentVariables: {
+          BASE_URL: "https://beta-updates.getspacerabbit.com",
+        },
+      }),
+      RuntimeVersion: "syn-nodejs-puppeteer-12.0",
+      Schedule: { Expression: "rate(5 minutes)" },
+      StartCanaryAfterCreation: true,
+    });
+  });
+
+  it("creates account-local dashboards and low-noise alarms without actions", () => {
+    const betaTemplate = template("beta");
+    betaTemplate.hasResourceProperties("AWS::CloudWatch::Dashboard", {
+      DashboardName: "SpaceRabbit-beta-UpdateDelivery",
+    });
+    betaTemplate.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: "SpaceRabbit-beta-UpdateEndpoint",
+      ComparisonOperator: "LessThanThreshold",
+      DatapointsToAlarm: 2,
+      EvaluationPeriods: 3,
+      Threshold: 100,
+      TreatMissingData: "breaching",
+    });
+    betaTemplate.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: "SpaceRabbit-beta-HourlyBandwidth",
+      ComparisonOperator: "GreaterThanThreshold",
+      EvaluationPeriods: 1,
+      Metrics: Match.arrayWith([
+        Match.objectLike({ MetricStat: Match.objectLike({ Period: 3600 }) }),
+      ]),
+      Threshold: 1073741824,
+      TreatMissingData: "notBreaching",
+    });
+    for (const [status, threshold] of [["4xx", 10], ["5xx", 5]] as const) {
+      betaTemplate.hasResourceProperties("AWS::CloudWatch::Alarm", {
+        AlarmName: `SpaceRabbit-beta-CloudFront${status}`,
+        ComparisonOperator: "GreaterThanThreshold",
+        DatapointsToAlarm: 2,
+        EvaluationPeriods: 3,
+        Metrics: Match.arrayWith([
+          Match.objectLike({ Expression: "IF(requests >= 20, errors, 0)" }),
+        ]),
+        Threshold: threshold,
+        TreatMissingData: "notBreaching",
+      });
+    }
+    betaTemplate.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: "SpaceRabbit-beta-CertificateExpiry",
+      ComparisonOperator: "LessThanThreshold",
+      EvaluationPeriods: 1,
+      Threshold: 30,
+      TreatMissingData: "notBreaching",
+    });
+
+    const rendered = betaTemplate.toJSON();
+    const alarms = Object.values(rendered.Resources)
+      .filter((resource: any) => resource.Type === "AWS::CloudWatch::Alarm");
+    expect(alarms).toHaveLength(5);
+    expect(alarms.every((resource: any) =>
+      resource.Properties.AlarmActions === undefined &&
+      resource.Properties.InsufficientDataActions === undefined &&
+      resource.Properties.OKActions === undefined
+    )).toBe(true);
+    expect(betaTemplate.findResources("AWS::SNS::Topic")).toEqual({});
+  });
+
+  it("uses the production bandwidth threshold independently", () => {
+    template("production").hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: "SpaceRabbit-production-HourlyBandwidth",
+      Threshold: 10737418240,
     });
   });
 

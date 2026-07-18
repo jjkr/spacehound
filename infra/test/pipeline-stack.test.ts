@@ -9,6 +9,7 @@ describe("SpaceRabbit infrastructure pipeline", () => {
     config: {
       beta: {
         account: "499246566000",
+        bandwidthAlarmGibPerHour: 1,
         domainName: "beta-updates.getspacerabbit.com",
         githubEnvironment: "beta",
         githubOidcProviderArn:
@@ -23,6 +24,7 @@ describe("SpaceRabbit infrastructure pipeline", () => {
       parentHostedZoneId: "Z0123456789EXAMPLE",
       production: {
         account: "772699011759",
+        bandwidthAlarmGibPerHour: 10,
         domainName: "updates.getspacerabbit.com",
         githubEnvironment: "production",
         githubOidcProviderArn:

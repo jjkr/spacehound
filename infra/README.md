@@ -95,6 +95,35 @@ the pipeline once from the CodePipeline console (or push a qualifying commit to
 production deployment. Inspect the beta stack and endpoint before approving
 production. Subsequent qualifying commits to `main` are handled automatically.
 
+## Monitoring
+
+Each beta and production update stack owns an environment-specific CloudWatch
+dashboard, five alarms, and a CloudWatch Synthetics canary. The canary runs every
+five minutes, validates `appcast.xml` as XML, and uses HEAD requests to verify
+the current appcast enclosure and `releases/latest/SpaceRabbit-arm64.dmg`
+without downloading either artifact.
+
+The dashboards are named `SpaceRabbit-beta-UpdateDelivery` and
+`SpaceRabbit-production-UpdateDelivery`. They show endpoint success and
+duration, CloudFront requests, error rates, bytes downloaded, cache-hit rate,
+origin latency, ACM certificate lifetime, and S3 storage. Their names and the
+canary names are also emitted as stack outputs.
+
+The alarms intentionally have no notification actions. Inspect them directly in
+CloudWatch until notification routing is added. They enter ALARM for:
+
+- two failed endpoint checks within three five-minute periods;
+- 4xx rates over 10% or 5xx rates over 5% in two of three periods with at least
+  20 requests per period;
+- more than 1 GiB downloaded by beta or 10 GiB by production in one hour; or
+- fewer than 30 days remaining on the environment's ACM certificate.
+
+The endpoint alarm treats missing canary data as a failure, so it can briefly be
+INSUFFICIENT_DATA or ALARM while the first canary runs complete after deployment.
+The bandwidth limits are explicit CDK context values in `cdk.json`:
+`betaBandwidthAlarmGibPerHour` and `prodBandwidthAlarmGibPerHour`. Adjust those
+values through the normal infrastructure pipeline after observing real traffic.
+
 Buckets are private, encrypted, versioned, and retained on stack deletion; child
 hosted zones and their parent delegations are retained as well. CloudFront uses
 Origin Access Control. Versioned artifacts are immutable and long cached;
