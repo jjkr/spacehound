@@ -7,10 +7,11 @@ options:
 
 settings:
   base:
-    CURRENT_PROJECT_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 0.1.0fc1
     MARKETING_VERSION: 0.1.0
     CLANG_ENABLE_OBJC_ARC: YES
-    SPARKLE_FEED_URL: https://updates.spacerabbit.io/appcast.xml
+    SPARKLE_FEED_URL: https://updates.getspacerabbit.com/appcast.xml
+    SPARKLE_BETA_FEED_URL: https://beta-updates.getspacerabbit.com/appcast.xml
     SPARKLE_PUBLIC_ED_KEY: ""
 
 packages:
@@ -121,6 +122,7 @@ targets:
         NSSupportsSuddenTermination: true
         SUAllowsAutomaticUpdates: true
         SUAutomaticallyUpdate: false
+        SUBetaFeedURL: $(SPARKLE_BETA_FEED_URL)
         SUEnableAutomaticChecks: true
         SUFeedURL: $(SPARKLE_FEED_URL)
         SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)

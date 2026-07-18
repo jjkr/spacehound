@@ -18,30 +18,37 @@ function expect_failure() {
   fi
 }
 
-for version in 0.1.0 1.0.0 12.34.56; do
-  actual=$("${validator}" "${version}")
-  [[ "${actual}" == "${version}" ]]
+for pair in "0.1.0 0.1.0fc1" "1.0.0 1.0.0fc255" "12.34.56 12.34.56fc7"; do
+  marketing="${pair%% *}"
+  bundle="${pair##* }"
+  [[ "$("${validator}" "${marketing}" "${bundle}")" == "${bundle}" ]]
 done
 
-for version in v1 1.2 1.2.3.4 1.2-beta abc; do
-  expect_failure "${validator}" "${version}"
-done
+expect_failure "${validator}" 1.2 1.2fc1
+expect_failure "${validator}" 1.2.3 1.2.3
+expect_failure "${validator}" 1.2.3 1.2.4fc1
+expect_failure "${validator}" 1.2.3 1.2.3fc0
+expect_failure "${validator}" 1.2.3 1.2.3fc256
+expect_failure "${validator}" 1.2.3 1.2.3fc01
 
 cat > "${test_dir}/appcast.xml" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
   <channel>
-    <item><sparkle:version>1.2.3</sparkle:version></item>
+    <item><sparkle:version>1.2.3fc2</sparkle:version></item>
   </channel>
 </rss>
 EOF
 
-[[ "$("${validator}" 1.2.4 "${test_dir}/appcast.xml")" == "1.2.4" ]]
-[[ "$("${validator}" 1.3.0 "${test_dir}/appcast.xml")" == "1.3.0" ]]
-[[ "$("${validator}" 2.0.0 "${test_dir}/appcast.xml")" == "2.0.0" ]]
-expect_failure "${validator}" 1.2.3 "${test_dir}/appcast.xml"
-expect_failure "${validator}" 1.2.2 "${test_dir}/appcast.xml"
-expect_failure "${validator}" 0.99.99 "${test_dir}/appcast.xml"
+[[ "$("${validator}" 1.2.3 1.2.3fc3 "${test_dir}/appcast.xml")" == "1.2.3fc3" ]]
+[[ "$("${validator}" 1.2.4 1.2.4fc1 "${test_dir}/appcast.xml")" == "1.2.4fc1" ]]
+[[ "$("${validator}" 2.0.0 2.0.0fc1 "${test_dir}/appcast.xml")" == "2.0.0fc1" ]]
+expect_failure "${validator}" 1.2.3 1.2.3fc2 "${test_dir}/appcast.xml"
+expect_failure "${validator}" 1.2.3 1.2.3fc1 "${test_dir}/appcast.xml"
+
+sed -i '' 's/1.2.3fc2/1.2.3/' "${test_dir}/appcast.xml"
+expect_failure "${validator}" 1.2.3 1.2.3fc255 "${test_dir}/appcast.xml"
+[[ "$("${validator}" 1.2.4 1.2.4fc1 "${test_dir}/appcast.xml")" == "1.2.4fc1" ]]
 
 # RFC 8032 test vector 1: a known Ed25519 seed and its public key.
 private_key="nWGxne/9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A="

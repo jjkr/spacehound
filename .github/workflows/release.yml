@@ -1,42 +1,40 @@
-name: Release
+name: Release candidate
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Staging release version (X.Y.Z)"
+        description: "Marketing version (X.Y.Z)"
         required: true
         type: string
-      channel:
-        description: "Update channel"
+      candidate:
+        description: "Final-candidate number (1-255)"
         required: true
-        default: staging
-        type: choice
-        options:
-          - staging
+        default: "1"
+        type: string
 
 permissions:
   contents: write
   id-token: write
 
-# Version ordering is checked while holding this per-channel workflow lock.
-# This prevents an older build from publishing mutable aliases after a newer one.
+# A release holds this lock through production approval. That keeps both mutable
+# feeds ordered and ensures only one candidate can be promoted at a time.
 concurrency:
-  group: spacerabbit-release-${{ github.event_name == 'push' && 'production' || 'staging' }}
+  group: spacerabbit-release
   cancel-in-progress: false
 
 jobs:
-  release:
+  candidate:
+    name: Build and publish beta candidate
     runs-on: macos-26
-    environment: production
+    timeout-minutes: 90
+    environment: beta
     env:
-      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) }}
-      RELEASE_CHANNEL: ${{ github.event_name == 'push' && 'production' || inputs.channel }}
-      RELEASE_VERSION: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) }}
-      SPARKLE_FEED_URL: ${{ github.event_name == 'push' && 'https://updates.spacerabbit.io/appcast.xml' || 'https://updates.spacerabbit.io/staging/appcast.xml' }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_BUILD_VERSION: ${{ format('{0}fc{1}', inputs.version, inputs.candidate) }}
+      RELEASE_ARTIFACT_VERSION: ${{ format('{0}-fc{1}', inputs.version, inputs.candidate) }}
+      SPARKLE_FEED_URL: https://updates.getspacerabbit.com/appcast.xml
+      SPARKLE_BETA_FEED_URL: https://beta-updates.getspacerabbit.com/appcast.xml
       SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
       AWS_REGION: ${{ vars.AWS_RELEASE_REGION }}
       AWS_RELEASE_BUCKET: ${{ vars.AWS_RELEASE_BUCKET }}
@@ -54,11 +52,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Validate release configuration
+      - name: Validate candidate configuration
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release candidates must be dispatched from the main branch"
+            exit 1
+          fi
 
           required_vars=(
             AWS_CLOUDFRONT_DISTRIBUTION_ID
@@ -74,52 +77,38 @@ jobs:
             SPARKLE_ED_PRIVATE_KEY
             SPARKLE_PUBLIC_ED_KEY
           )
-
           for name in "${required_vars[@]}"; do
             if [[ -z "${!name:-}" ]]; then
-              echo "::error::Missing required secret or variable: ${name}"
+              echo "::error::Missing beta environment secret or variable: ${name}"
               exit 1
             fi
           done
 
-          version="${RELEASE_TAG#v}"
-          ./scripts/validate-release-version.sh "${version}" >/dev/null
+          ./scripts/validate-release-version.sh \
+            "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" >/dev/null
           ./scripts/tests/release-scripts-test.sh
-
-          if [[ ! -d spacerabbit-core ]]; then
+          [[ -d spacerabbit-core ]] || {
             echo "::error::Expected spacerabbit-core/ sources in this repository."
             exit 1
-          fi
+          }
 
-      - name: Configure AWS credentials
+      - name: Configure beta AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_RELEASE_ROLE_ARN }}
 
-      - name: Check published version ordering
+      - name: Check beta version ordering
         run: |
           set -euo pipefail
           mkdir -p build
-          if [[ "${RELEASE_CHANNEL}" == "production" ]]; then
-            appcast_key="appcast.xml"
-          else
-            appcast_key="staging/appcast.xml"
-          fi
-
-          key_count=$(aws s3api list-objects-v2 \
+          if aws s3api head-object \
             --bucket "${AWS_RELEASE_BUCKET}" \
-            --prefix "${appcast_key}" \
-            --max-keys 1 \
-            --query KeyCount \
-            --output text)
-
-          if [[ "${key_count}" == "1" ]]; then
-            aws s3 cp "s3://${AWS_RELEASE_BUCKET}/${appcast_key}" build/current-appcast.xml
-            ./scripts/validate-release-version.sh "${RELEASE_TAG#v}" build/current-appcast.xml >/dev/null
-          elif [[ "${key_count}" != "0" ]]; then
-            echo "::error::Unexpected appcast object count: ${key_count}"
-            exit 1
+            --key appcast.xml >/dev/null 2>&1; then
+            aws s3 cp "s3://${AWS_RELEASE_BUCKET}/appcast.xml" build/current-beta-appcast.xml
+            ./scripts/validate-release-version.sh \
+              "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" \
+              build/current-beta-appcast.xml >/dev/null
           fi
 
       - name: Install build tools
@@ -129,10 +118,7 @@ jobs:
         run: |
           set -euo pipefail
           for tool in xcodegen cmake ninja; do
-            if command -v "${tool}" >/dev/null 2>&1; then
-              echo "${tool} already present: $(command -v "${tool}")"
-            else
-              echo "Installing missing tool: ${tool}"
+            if ! command -v "${tool}" >/dev/null 2>&1; then
               brew install "${tool}"
             fi
           done
@@ -152,153 +138,264 @@ jobs:
           security list-keychains -d user -s "${KEYCHAIN_PATH}" login.keychain-db
           security default-keychain -d user -s "${KEYCHAIN_PATH}"
 
-      - name: Build signed release artifacts
+      - name: Build, sign, and notarize candidate once
         run: ./scripts/package-release.sh
 
       - name: Generate release notes
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          notes_path="build/dist/SpaceRabbit-${version}-arm64.md"
+          mkdir -p build/dist/beta build/dist/production
+          notes_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="v${RELEASE_VERSION}" \
+            -f target_commitish="${GITHUB_SHA}" \
+            --jq .body > build/generated-release-notes.md
+          {
+            printf '# SpaceRabbit %s (final candidate %s)\n\n' \
+              "${RELEASE_VERSION}" "${{ inputs.candidate }}"
+            cat build/generated-release-notes.md
+          } > "build/dist/beta/${notes_name}"
+          {
+            printf '# SpaceRabbit %s\n\n' "${RELEASE_VERSION}"
+            cat build/generated-release-notes.md
+          } > "build/dist/production/${notes_name}"
 
-          if [[ "${RELEASE_CHANNEL}" == "production" ]]; then
-            gh api \
-              --method POST \
-              "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-              -f tag_name="${RELEASE_TAG}" \
-              --jq .body > "${notes_path}"
-          else
-            printf '# SpaceRabbit %s staging update\n\nInternal validation build.\n' "${version}" > "${notes_path}"
-          fi
-
-      - name: Generate and verify signed appcast
+      - name: Generate and verify beta and production appcasts
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#v}"
           sparkle_bin="build/DerivedDataRelease/SourcePackages/artifacts/sparkle/Sparkle/bin"
+          archive_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          notes_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
 
-          if [[ "${RELEASE_CHANNEL}" == "production" ]]; then
-            release_prefix="releases/v${version}"
-          else
-            release_prefix="staging/releases/v${version}"
-          fi
-
-          export UPDATE_ARCHIVE_PATH="build/dist/SpaceRabbit-${version}-arm64.zip"
-          export RELEASE_NOTES_PATH="build/dist/SpaceRabbit-${version}-arm64.md"
-          export APPCAST_OUTPUT_PATH="build/dist/appcast.xml"
-          export DOWNLOAD_URL_PREFIX="https://updates.spacerabbit.io/${release_prefix}"
-          export RELEASE_NOTES_URL_PREFIX="https://updates.spacerabbit.io/${release_prefix}"
+          export RELEASE_MARKETING_VERSION="${RELEASE_VERSION}"
+          export UPDATE_ARCHIVE_PATH="build/dist/${archive_name}"
           export SPARKLE_GENERATE_APPCAST="${sparkle_bin}/generate_appcast"
           export SPARKLE_SIGN_UPDATE="${sparkle_bin}/sign_update"
+
+          export RELEASE_NOTES_PATH="build/dist/beta/${notes_name}"
+          export APPCAST_OUTPUT_PATH="build/dist/beta-appcast.xml"
+          export DOWNLOAD_URL_PREFIX="https://beta-updates.getspacerabbit.com/releases/v${RELEASE_ARTIFACT_VERSION}"
+          export RELEASE_NOTES_URL_PREFIX="${DOWNLOAD_URL_PREFIX}"
           ./scripts/generate-appcast.sh
 
-      - name: Upload workflow artifacts
+          export RELEASE_NOTES_PATH="build/dist/production/${notes_name}"
+          export APPCAST_OUTPUT_PATH="build/dist/production-appcast.xml"
+          export DOWNLOAD_URL_PREFIX="https://updates.getspacerabbit.com/releases/v${RELEASE_VERSION}"
+          export RELEASE_NOTES_URL_PREFIX="${DOWNLOAD_URL_PREFIX}"
+          ./scripts/generate-appcast.sh
+
+      - name: Create immutable candidate manifest
+        run: |
+          set -euo pipefail
+          shasum -a 256 \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
+            build/dist/beta-appcast.xml \
+            "build/dist/beta/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md" \
+            build/dist/production-appcast.xml \
+            "build/dist/production/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md" \
+            > build/dist/release-manifest-SHA256SUMS.txt
+
+      - name: Upload candidate for production promotion
         uses: actions/upload-artifact@v7
         with:
-          name: SpaceRabbit-${{ env.RELEASE_TAG }}-${{ env.RELEASE_CHANNEL }}
-          path: build/dist/*
+          name: SpaceRabbit-${{ env.RELEASE_ARTIFACT_VERSION }}
+          path: build/dist
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Publish immutable AWS artifacts
+      - name: Publish immutable beta artifacts
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          if [[ "${RELEASE_CHANNEL}" == "production" ]]; then
-            release_prefix="releases/v${version}"
-          else
-            release_prefix="staging/releases/v${version}"
-          fi
+          release_prefix="releases/v${RELEASE_ARTIFACT_VERSION}"
+          archive_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          dmg_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
+          checksums_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt"
+          notes_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
 
-          zip_name="SpaceRabbit-${version}-arm64.zip"
-          dmg_name="SpaceRabbit-${version}-arm64.dmg"
-          notes_name="SpaceRabbit-${version}-arm64.md"
-          checksums_name="SpaceRabbit-${version}-SHA256SUMS.txt"
-
-          if aws s3api head-object \
-            --bucket "${AWS_RELEASE_BUCKET}" \
-            --key "${release_prefix}/${zip_name}" >/dev/null 2>&1; then
-            echo "::error::Release ${release_prefix} already exists and will not be overwritten"
+          if aws s3api head-object --bucket "${AWS_RELEASE_BUCKET}" \
+            --key "${release_prefix}/${archive_name}" >/dev/null 2>&1; then
+            echo "::error::Beta candidate ${release_prefix} already exists"
             exit 1
           fi
 
-          aws s3 cp "build/dist/${zip_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${zip_name}" \
-            --cache-control 'public,max-age=31536000,immutable' \
-            --content-type application/zip
+          aws s3 cp "build/dist/${archive_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${archive_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type application/zip
           aws s3 cp "build/dist/${dmg_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${dmg_name}" \
-            --cache-control 'public,max-age=31536000,immutable' \
-            --content-type application/x-apple-diskimage
-          aws s3 cp "build/dist/${notes_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${notes_name}" \
-            --cache-control 'public,max-age=31536000,immutable' \
-            --content-type 'text/markdown; charset=utf-8'
+            --cache-control 'public,max-age=31536000,immutable' --content-type application/x-apple-diskimage
           aws s3 cp "build/dist/${checksums_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${checksums_name}" \
-            --cache-control 'public,max-age=31536000,immutable' \
-            --content-type 'text/plain; charset=utf-8'
+            --cache-control 'public,max-age=31536000,immutable' --content-type 'text/plain; charset=utf-8'
+          aws s3 cp "build/dist/beta/${notes_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${notes_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type 'text/markdown; charset=utf-8'
 
-      - name: Publish GitHub release mirror
-        if: env.RELEASE_CHANNEL == 'production'
+      - name: Update beta aliases and publish appcast last
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          notes_path="build/dist/SpaceRabbit-${version}-arm64.md"
-
-          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "::error::GitHub release ${RELEASE_TAG} already exists and will not be overwritten"
-            exit 1
-          fi
-
-          gh release create "${RELEASE_TAG}" \
-            "build/dist/SpaceRabbit-${version}-arm64.zip" \
-            "build/dist/SpaceRabbit-${version}-arm64.dmg" \
-            "build/dist/SpaceRabbit-${version}-SHA256SUMS.txt" \
-            "${notes_path}" \
-            "build/dist/appcast.xml" \
-            --title "${RELEASE_TAG}" \
-            --notes-file "${notes_path}"
-
-      - name: Update latest aliases
-        if: env.RELEASE_CHANNEL == 'production'
-        run: |
-          set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          aws s3 cp "build/dist/SpaceRabbit-${version}-arm64.zip" \
+          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
             "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-arm64.zip" \
-            --cache-control 'no-cache,max-age=0' \
-            --content-type application/zip
-          aws s3 cp "build/dist/SpaceRabbit-${version}-arm64.dmg" \
+            --cache-control 'no-cache,max-age=0' --content-type application/zip
+          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
             "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-arm64.dmg" \
-            --cache-control 'no-cache,max-age=0' \
-            --content-type application/x-apple-diskimage
-          aws s3 cp "build/dist/SpaceRabbit-${version}-SHA256SUMS.txt" \
-            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-SHA256SUMS.txt" \
-            --cache-control 'no-cache,max-age=0' \
-            --content-type 'text/plain; charset=utf-8'
-
-      - name: Publish signed appcast last
-        run: |
-          set -euo pipefail
-          if [[ "${RELEASE_CHANNEL}" == "production" ]]; then
-            appcast_key="appcast.xml"
-            invalidation_paths=(
-              '/appcast.xml'
-              '/releases/latest/*'
-            )
-          else
-            appcast_key="staging/appcast.xml"
-            invalidation_paths=(
-              '/staging/appcast.xml'
-            )
-          fi
-
-          aws s3 cp build/dist/appcast.xml "s3://${AWS_RELEASE_BUCKET}/${appcast_key}" \
-            --cache-control 'no-cache,max-age=0' \
-            --content-type 'application/xml; charset=utf-8'
+            --cache-control 'no-cache,max-age=0' --content-type application/x-apple-diskimage
+          aws s3 cp build/dist/beta-appcast.xml "s3://${AWS_RELEASE_BUCKET}/appcast.xml" \
+            --cache-control 'no-cache,max-age=0' --content-type 'application/xml; charset=utf-8'
           aws cloudfront create-invalidation \
             --distribution-id "${AWS_CLOUDFRONT_DISTRIBUTION_ID}" \
-            --paths "${invalidation_paths[@]}"
+            --paths '/appcast.xml' '/releases/latest/*'
 
       - name: Clean up keychain
         if: always()
         env:
           KEYCHAIN_PATH: ${{ runner.temp }}/app-signing.keychain-db
         run: security delete-keychain "${KEYCHAIN_PATH}" || true
+
+  promote:
+    name: Approve and promote exact candidate
+    needs: candidate
+    runs-on: macos-26
+    timeout-minutes: 30
+    environment: production
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_BUILD_VERSION: ${{ format('{0}fc{1}', inputs.version, inputs.candidate) }}
+      RELEASE_ARTIFACT_VERSION: ${{ format('{0}-fc{1}', inputs.version, inputs.candidate) }}
+      SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+      AWS_REGION: ${{ vars.AWS_RELEASE_REGION }}
+      AWS_RELEASE_BUCKET: ${{ vars.AWS_RELEASE_BUCKET }}
+      AWS_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
+      AWS_RELEASE_ROLE_ARN: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download exact beta candidate
+        uses: actions/download-artifact@v7
+        with:
+          name: SpaceRabbit-${{ env.RELEASE_ARTIFACT_VERSION }}
+          path: build/dist
+
+      - name: Verify candidate manifest, signature, ticket, and metadata
+        run: |
+          set -euo pipefail
+          required_vars=(
+            AWS_CLOUDFRONT_DISTRIBUTION_ID
+            AWS_REGION
+            AWS_RELEASE_BUCKET
+            AWS_RELEASE_ROLE_ARN
+            SPARKLE_PUBLIC_ED_KEY
+          )
+          for name in "${required_vars[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing production environment variable: ${name}"
+              exit 1
+            fi
+          done
+
+          shasum -a 256 -c build/dist/release-manifest-SHA256SUMS.txt
+          archive="build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          dmg="build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
+          verify_dir="${RUNNER_TEMP}/spacerabbit-candidate"
+          mkdir -p "${verify_dir}"
+          ditto -x -k "${archive}" "${verify_dir}"
+          app="${verify_dir}/SpaceRabbit.app"
+          codesign --verify --deep --strict --verbose=2 "${app}"
+          spctl --assess --type execute --verbose=4 "${app}"
+          xcrun stapler validate "${app}"
+          codesign --verify --verbose=2 "${dmg}"
+          xcrun stapler validate "${dmg}"
+
+          info="${app}/Contents/Info.plist"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info}")" == "${RELEASE_VERSION}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info}")" == "${RELEASE_BUILD_VERSION}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "${info}")" == 'https://updates.getspacerabbit.com/appcast.xml' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUBetaFeedURL' "${info}")" == 'https://beta-updates.getspacerabbit.com/appcast.xml' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "${info}")" == "${SPARKLE_PUBLIC_ED_KEY}" ]]
+
+          appcast=build/dist/production-appcast.xml
+          xmllint --noout "${appcast}"
+          [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="version"])' "${appcast}")" == "${RELEASE_BUILD_VERSION}" ]]
+          [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="shortVersionString"])' "${appcast}")" == "${RELEASE_VERSION}" ]]
+          expected_archive_url="https://updates.getspacerabbit.com/releases/v${RELEASE_VERSION}/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@url)' "${appcast}")" == "${expected_archive_url}" ]]
+          [[ -n "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@*[local-name()="edSignature"])' "${appcast}")" ]]
+          grep -q '<!-- sparkle-signatures:' "${appcast}"
+
+      - name: Configure production AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_RELEASE_ROLE_ARN }}
+
+      - name: Check production version ordering
+        run: |
+          set -euo pipefail
+          if aws s3api head-object --bucket "${AWS_RELEASE_BUCKET}" \
+            --key appcast.xml >/dev/null 2>&1; then
+            aws s3 cp "s3://${AWS_RELEASE_BUCKET}/appcast.xml" build/current-production-appcast.xml
+            ./scripts/validate-release-version.sh \
+              "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" \
+              build/current-production-appcast.xml >/dev/null
+          fi
+
+      - name: Publish immutable production artifacts
+        run: |
+          set -euo pipefail
+          release_prefix="releases/v${RELEASE_VERSION}"
+          archive_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          dmg_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
+          checksums_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt"
+          notes_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
+
+          if aws s3api head-object --bucket "${AWS_RELEASE_BUCKET}" \
+            --key "${release_prefix}/${archive_name}" >/dev/null 2>&1; then
+            echo "::error::Production release ${release_prefix} already exists"
+            exit 1
+          fi
+
+          aws s3 cp "build/dist/${archive_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${archive_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type application/zip
+          aws s3 cp "build/dist/${dmg_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${dmg_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type application/x-apple-diskimage
+          aws s3 cp "build/dist/${checksums_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${checksums_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type 'text/plain; charset=utf-8'
+          aws s3 cp "build/dist/production/${notes_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${notes_name}" \
+            --cache-control 'public,max-age=31536000,immutable' --content-type 'text/markdown; charset=utf-8'
+
+      - name: Publish GitHub release mirror
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE_VERSION}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "::error::GitHub release ${tag} already exists"
+            exit 1
+          fi
+          gh release create "${tag}" \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
+            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
+            --target "${GITHUB_SHA}" \
+            --title "${tag}" \
+            --notes-file "build/dist/production/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
+
+      - name: Update production aliases and publish appcast last
+        run: |
+          set -euo pipefail
+          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-arm64.zip" \
+            --cache-control 'no-cache,max-age=0' --content-type application/zip
+          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-arm64.dmg" \
+            --cache-control 'no-cache,max-age=0' --content-type application/x-apple-diskimage
+          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-SHA256SUMS.txt" \
+            --cache-control 'no-cache,max-age=0' --content-type 'text/plain; charset=utf-8'
+          aws s3 cp build/dist/production-appcast.xml "s3://${AWS_RELEASE_BUCKET}/appcast.xml" \
+            --cache-control 'no-cache,max-age=0' --content-type 'application/xml; charset=utf-8'
+          aws cloudfront create-invalidation \
+            --distribution-id "${AWS_CLOUDFRONT_DISTRIBUTION_ID}" \
+            --paths '/appcast.xml' '/releases/latest/*'

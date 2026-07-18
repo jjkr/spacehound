@@ -15,7 +15,7 @@ waiting on the built-in animations. The menu bar always shows which Space you're
 
 ## Install
 
-1. Download the [**latest SpaceRabbit DMG**](https://updates.spacerabbit.io/releases/latest/SpaceRabbit-arm64.dmg).
+1. Download the [**latest SpaceRabbit DMG**](https://updates.getspacerabbit.com/releases/latest/SpaceRabbit-arm64.dmg).
 2. Open the DMG and drag **SpaceRabbit** to your Applications folder.
 3. Launch SpaceRabbit. It appears in the menu bar — there is no Dock icon or main
    window.
@@ -62,6 +62,7 @@ menu:
 - **Space _X_ of _Y_** — the current status (or a message if access is needed).
 - **Grant Accessibility Access…** — shown only when access hasn't been granted yet.
 - **Settings…** (⌘,) — open the Settings window.
+- **Receive Beta Updates** — opt into or out of signed release candidates.
 - **Check for Updates…** — check the signed SpaceRabbit update feed immediately.
 - **Quit SpaceRabbit** (⌘Q).
 

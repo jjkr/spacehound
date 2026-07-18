@@ -69,23 +69,25 @@ runtime (reader) is documented in
 
 ## Distribution
 
-Production updates are hosted at `https://updates.spacerabbit.io` from a private
-S3 bucket behind CloudFront. GitHub Releases contains an identical mirror. The
-repo includes:
+Production updates are hosted at `https://updates.getspacerabbit.com`; beta
+updates use `https://beta-updates.getspacerabbit.com`. Each environment has its
+own private S3 bucket, CloudFront distribution, certificate, hosted zone, and
+GitHub publisher role. GitHub Releases contains the production mirror. The repo
+includes:
 
 - `scripts/package-release.sh` to archive an arm64-only release build, sign it
   with Developer ID, notarize a ZIP of the app, staple the app, build a DMG, then
   notarize and staple the DMG.
 - `scripts/generate-appcast.sh` to generate and verify a signed Sparkle appcast
   without exposing the private signing key in process arguments.
-- `.github/workflows/release.yml` to publish immutable AWS artifacts, mirror a
-  production GitHub Release, update latest-download aliases, and publish the
-  appcast only after every preceding step succeeds.
-- `infra/` for the TypeScript AWS CDK stack. See
+- `.github/workflows/release.yml` to build one notarized candidate, publish it to
+  beta, hold for production approval, and promote those exact bytes.
+- `infra/` for the self-mutating CDK Pipeline and independent beta/production
+  stacks. See
   [`infra/README.md`](infra/README.md) for the one-time setup.
 
-The workflow serializes each update channel before checking published version
-ordering, so concurrent jobs cannot roll a mutable feed or `latest` alias back.
+The workflow is globally serialized before checking published version ordering,
+so concurrent jobs cannot roll either mutable feed or `latest` alias back.
 Appcast generation also derives the public key from the private signing secret
 and refuses to continue unless it matches `SPARKLE_PUBLIC_ED_KEY` embedded in
 the app.
@@ -96,18 +98,22 @@ installer helpers are embedded and signed by Xcode.
 
 ### Version contract
 
-Production tags must use `vX.Y.Z`. The tag value without `v` is written to both
-`CFBundleShortVersionString` and `CFBundleVersion`, and is also used by the C++
-version header, archive names, and appcast. Published versions and versioned S3
-objects are immutable; a correction must be a higher patch release.
+Release inputs use a marketing version `X.Y.Z` and a final-candidate number
+`N` from 1 through 255. The app gets `CFBundleShortVersionString=X.Y.Z` and
+`CFBundleVersion=X.Y.ZfcN`; candidate artifacts use `X.Y.Z-fcN` in their names.
+The exact same ZIP and DMG are first published to beta and later promoted to
+production. Promotion creates the stable `vX.Y.Z` Git tag but does not rebuild
+the app. Published versions and versioned S3 objects are immutable; use a higher
+candidate number or marketing version for corrections.
 
-`v0.1.0` is the bootstrap release that establishes the Sparkle public key. Use
-the staging workflow to validate a signed `0.1.0` to `0.1.1` update before the
-production feed is relied upon.
+A legacy appcast version written as plain `X.Y.Z` sorts after every `X.Y.ZfcN`.
+If `0.1.0` was already published by the old workflow, start this candidate flow
+at `0.1.1fc1`, not `0.1.0fc1`.
 
 ### Release secrets
 
-Set these repository secrets for GitHub Actions:
+Set these secrets on the protected `beta` GitHub environment, because the beta
+job is the only job that builds, signs, notarizes, and creates appcasts:
 
 - `BUILD_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
 - `P12_PASSWORD`: password for the `.p12`
@@ -115,15 +121,22 @@ Set these repository secrets for GitHub Actions:
 - `DEVELOPMENT_TEAM`: your Apple Developer Team ID
 - `APPLE_ID`: Apple ID used for notarization
 - `APPLE_APP_SPECIFIC_PASSWORD`: app-specific password for that Apple ID
+- `SPARKLE_ED_PRIVATE_KEY`: the exported Sparkle private seed
 
-The protected `production` GitHub environment also needs:
+Set these variables separately on both `beta` and `production` environments,
+using the outputs from that environment's CDK stack:
 
-- Secret `SPARKLE_ED_PRIVATE_KEY`: the exported Sparkle private seed.
 - Variable `SPARKLE_PUBLIC_ED_KEY`: the matching base64 public key.
 - Variable `AWS_RELEASE_ROLE_ARN`: CDK output `GitHubPublisherRoleArn`.
 - Variable `AWS_RELEASE_BUCKET`: CDK output `ArtifactBucketName`.
 - Variable `AWS_CLOUDFRONT_DISTRIBUTION_ID`: CDK output `DistributionId`.
 - Variable `AWS_RELEASE_REGION`: `us-east-1`.
+
+The production environment does not need the certificate, Apple credentials,
+or Sparkle private key. Configure production with required reviewers; approving
+that environment is the release promotion gate. Repository-level secrets may
+be used instead, but keeping the signing material scoped to `beta` makes the
+build-once boundary explicit.
 
 Keep an encrypted offline backup of the Sparkle private key. Do not print it,
 place it in command arguments, or commit it. Losing it prevents new signed-feed
@@ -135,6 +148,7 @@ updates until a deliberate key-recovery or rotation release is performed.
 export DEVELOPMENT_TEAM=YOURTEAMID
 export CODE_SIGN_IDENTITY="Developer ID Application"
 export RELEASE_VERSION=0.1.0
+export RELEASE_BUILD_VERSION=0.1.0fc1
 export SPARKLE_PUBLIC_ED_KEY="YOUR_PUBLIC_KEY"
 export APPLE_API_KEY_PATH=/absolute/path/to/AuthKey_XXXXXX.p8
 export APPLE_API_KEY_ID=XXXXXX
@@ -142,19 +156,19 @@ export APPLE_API_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 make package-release
 ```
 
-The release workflow has two modes:
-
-- Pushing a new `vX.Y.Z` tag publishes production AWS artifacts and a GitHub
-  Release mirror.
-- Running it manually publishes a signed staging build under `/staging/` and
-  never creates a GitHub Release or modifies the production appcast.
+Dispatch **Release candidate** from the `main` branch with `version=X.Y.Z` and
+`candidate=N`. The workflow publishes beta first. Testers enable **Receive Beta
+Updates** in the menu bar and validate the candidate. Approving the pending
+production environment job verifies and promotes the downloaded candidate,
+publishes the production appcast, and creates `vX.Y.Z` plus its GitHub Release.
+Reject or cancel the approval to leave the candidate beta-only.
 
 If a job fails after uploading versioned objects but before publishing the
 appcast, that release is not visible to Sparkle. Confirm the appcast still
 points to the previous version, then remove only the orphaned version prefix
-and any matching GitHub Release before rerunning the tag. S3 versioning retains
-the removed object versions for recovery. Never remove or replace a prefix that
-has appeared in an appcast; publish a higher patch version instead.
+before retrying. S3 versioning retains removed object versions for recovery.
+Never remove or replace a prefix that has appeared in an appcast; publish a
+higher candidate or marketing version instead.
 
 Run the local validation suites with:
 

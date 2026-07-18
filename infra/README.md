@@ -1,57 +1,118 @@
 # SpaceRabbit update infrastructure
 
-This CDK app provisions the private S3 origin, CloudFront distribution,
-certificate, DNS records, and least-privilege GitHub Actions publisher role for
-`updates.spacerabbit.io`. It does not own or register the apex domain.
+The CDK app creates a self-mutating CDK Pipeline in the infrastructure account
+and deploys independent update-delivery stacks to beta and production:
 
-## One-time DNS setup
+| Purpose | Account | Domain |
+| --- | --- | --- |
+| Pipeline and root DNS | `spacerabbit-infra` (`155091848123`) | `getspacerabbit.com` |
+| Beta updates | `spacerabbit-beta` (`499246566000`) | `beta-updates.getspacerabbit.com` |
+| Production updates | `spacerabbit-prod` (`772699011759`) | `updates.getspacerabbit.com` |
 
-1. Create a public Route 53 hosted zone named `spacerabbit.io` manually.
-2. At Porkbun, replace the domain's authoritative name servers with the four
-   Route 53 name servers.
-3. Wait until `dig NS spacerabbit.io` returns the Route 53 delegation.
-4. Record the hosted zone ID. CDK consumes the existing zone and will create
-   only the certificate validation and `updates.spacerabbit.io` alias records.
+The pipeline automatically deploys beta, verifies its endpoint, then waits for
+manual approval before deploying production. It only triggers for changes to
+`infra/**` or `mise.toml` on `main`. The existing `spacerabbit.app` website is
+unrelated and is not changed by these stacks.
 
-## Install and deploy
+## Root DNS and GitHub connection
 
-The repository pins Node and pnpm through mise; do not install or invoke npm
-directly.
+1. In the infra account, create a public Route 53 hosted zone for
+   `getspacerabbit.com`.
+2. At the registrar, replace the domain's authoritative name servers with the
+   four values from that hosted zone. Record its hosted-zone ID.
+3. In **Developer Tools > Connections** in `us-east-1`, create a GitHub
+   connection for `animaslabs/spacerabbit` and complete the pending GitHub
+   authorization. Record the connection ARN.
+4. Put both non-secret values into `infra/cdk.json` as
+   `parentHostedZoneId` and `githubConnectionArn`, replacing the empty
+   placeholders, and commit them. They must be committed because the pipeline's
+   future self-mutation runs synth from the repository.
+
+Each workload stack creates its own child hosted zone. A narrowly scoped role in
+the infra account lets the workload accounts write only the NS delegation for
+their child domain into the root zone. Certificates are validated inside the
+child zones. A separate DNS account is unnecessary at this scale.
+
+## Install and validate
+
+Node and npm are pinned by mise; npm comes with the pinned Node installation.
+Run npm through mise so local and pipeline versions agree:
 
 ```sh
 mise install
-mise exec -- pnpm --dir infra install --frozen-lockfile
-mise exec -- pnpm --dir infra run build
-mise exec -- pnpm --dir infra test
-
-mise exec -- pnpm --dir infra exec cdk bootstrap aws://AWS_ACCOUNT_ID/us-east-1
-mise exec -- pnpm --dir infra exec cdk deploy \
-  -c hostedZoneId=ROUTE53_HOSTED_ZONE_ID
+mise exec -- npm --prefix infra ci
+mise exec -- npm --prefix infra run build
+mise exec -- npm --prefix infra test
 ```
 
-If the AWS account already has a GitHub Actions OIDC provider, import it instead
-of creating a duplicate:
+## Bootstrap the three accounts
+
+CDK Pipelines needs modern bootstrap stacks in all three accounts. Use local AWS
+profiles that can administer their corresponding accounts:
 
 ```sh
-mise exec -- pnpm --dir infra exec cdk deploy \
-  -c hostedZoneId=ROUTE53_HOSTED_ZONE_ID \
-  -c githubOidcProviderArn=arn:aws:iam::AWS_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com
+AWS_PROFILE=spacerabbit-infra mise exec -- npm --prefix infra run cdk -- \
+  bootstrap aws://155091848123/us-east-1
+
+AWS_PROFILE=spacerabbit-beta mise exec -- npm --prefix infra run cdk -- \
+  bootstrap aws://499246566000/us-east-1 \
+  --trust 155091848123 \
+  --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess
+
+AWS_PROFILE=spacerabbit-prod mise exec -- npm --prefix infra run cdk -- \
+  bootstrap aws://772699011759/us-east-1 \
+  --trust 155091848123 \
+  --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess
 ```
 
-Deploy the initial stack from a trusted workstation. Copy its bucket,
-distribution, and publisher-role outputs into the protected `production`
-GitHub environment using the variable names documented in `DEVELOPMENT.md`.
+AdministratorAccess is the standard initial CDK execution policy. It applies to
+CloudFormation's bootstrap execution role, not to GitHub Actions. It can be
+replaced later with a tested narrower policy that covers IAM, Route 53, ACM,
+S3, and CloudFront resources used by these stacks.
 
-The bucket and its version history are retained if the stack is deleted. The
-CloudFront origin uses Origin Access Control; the S3 bucket is never public.
-Versioned release objects cache for one year and are immutable. Appcasts and
-`releases/latest` aliases are uploaded with `no-cache` and explicitly
-invalidated after publication.
+## Initial pipeline deployment
+
+After the hosted-zone ID and connection ARN are committed in `cdk.json`, deploy
+the pipeline once from a trusted workstation:
+
+```sh
+AWS_PROFILE=spacerabbit-infra mise exec -- npm --prefix infra run cdk -- \
+  deploy SpaceRabbitInfrastructurePipeline
+```
+
+The initial deployment creates the DNS delegation role and CodePipeline. Start
+the pipeline once from the CodePipeline console (or push a qualifying commit to
+`main`); it then self-mutates, deploys beta, and pauses before its first
+production deployment. Inspect the beta stack and endpoint before approving
+production. Subsequent qualifying commits to `main` are handled automatically.
+
+Buckets are private, encrypted, versioned, and retained on stack deletion; child
+hosted zones and their parent delegations are retained as well. CloudFront uses
+Origin Access Control. Versioned artifacts are immutable and long cached;
+`appcast.xml` and `releases/latest/*` are published with `no-cache` and
+invalidated explicitly.
+
+## GitHub release environments
+
+After both workload stacks exist, copy each stack's outputs into the matching
+GitHub environment (`beta` or `production`):
+
+- `ArtifactBucketName` -> `AWS_RELEASE_BUCKET`
+- `DistributionId` -> `AWS_CLOUDFRONT_DISTRIBUTION_ID`
+- `GitHubPublisherRoleArn` -> `AWS_RELEASE_ROLE_ARN`
+- set `AWS_RELEASE_REGION` to `us-east-1`
+- set `SPARKLE_PUBLIC_ED_KEY` to the same public key in both environments
+
+The roles trust only the exact repository plus GitHub environment name. Put the
+Developer ID certificate, notarization credentials, and
+`SPARKLE_ED_PRIVATE_KEY` only in `beta`; production promotes the exact candidate
+artifact and needs no signing secret. Configure required reviewers on the
+production environment.
 
 ## Sparkle signing key bootstrap
 
-Resolve the pinned Sparkle package, then use Sparkle's own key tool with a
-SpaceRabbit-specific account name:
+Resolve the pinned Sparkle package, then use Sparkle's key tool with the existing
+SpaceRabbit account name:
 
 ```sh
 make generate
@@ -66,15 +127,16 @@ sparkle_bin=build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin
   -x /secure/offline/location/spacerabbit-sparkle-private-key
 ```
 
-The first command prints the public key for `SPARKLE_PUBLIC_ED_KEY`. Store the
-exported private seed in the GitHub secret `SPARKLE_ED_PRIVATE_KEY` and in an
-encrypted offline backup, then remove any unencrypted temporary copy.
+The first command prints `SPARKLE_PUBLIC_ED_KEY`. The second exports the private
+seed already stored in Keychain; its target file must not exist beforehand.
+Store that seed as the beta environment secret `SPARKLE_ED_PRIVATE_KEY` and in
+an encrypted offline backup, then remove every unencrypted temporary copy.
 
-## Staging verification
+## Candidate promotion
 
-The manually dispatched release workflow builds with
-`https://updates.spacerabbit.io/staging/appcast.xml`. Staging objects live under
-`staging/releases/vX.Y.Z/`, are not mirrored to GitHub Releases, and cannot
-modify the production feed. Test a notarized `0.1.0` staging install upgrading
-to `0.1.1`, including relaunch and preserved settings, before the first
-production release.
+One workflow dispatch builds `X.Y.ZfcN` once and publishes it at
+`https://beta-updates.getspacerabbit.com`. Enable **Receive Beta Updates** from
+the app's menu to test it. Production approval downloads the same retained
+GitHub Actions artifact, verifies its checksums, Developer ID signature,
+notarization ticket, bundle metadata, and pre-generated signed appcast, then
+publishes it to `https://updates.getspacerabbit.com` without invoking Xcode.

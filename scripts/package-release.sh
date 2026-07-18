@@ -66,7 +66,9 @@ fi
 
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
-SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://updates.spacerabbit.io/appcast.xml}"
+RELEASE_BUILD_VERSION="${RELEASE_BUILD_VERSION:-}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://updates.getspacerabbit.com/appcast.xml}"
+SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL:-https://beta-updates.getspacerabbit.com/appcast.xml}"
 
 if [[ -n "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="${RELEASE_VERSION#refs/tags/}"
@@ -77,13 +79,17 @@ if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="${MARKETING_VERSION:-0.1.0}"
 fi
 
-if [[ ! "${RELEASE_VERSION}" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
-  echo "error: release version must use X.Y.Z format, got ${RELEASE_VERSION}" >&2
+if [[ -z "${RELEASE_BUILD_VERSION}" ]]; then
+  echo "error: RELEASE_BUILD_VERSION must be set to X.Y.ZfcN" >&2
   exit 1
 fi
 
+"${ROOT_DIR}/scripts/validate-release-version.sh" \
+  "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" >/dev/null
+
 MARKETING_VERSION="${RELEASE_VERSION}"
-CURRENT_PROJECT_VERSION="${RELEASE_VERSION}"
+CURRENT_PROJECT_VERSION="${RELEASE_BUILD_VERSION}"
+RELEASE_ARTIFACT_VERSION="${RELEASE_BUILD_VERSION/fc/-fc}"
 
 rm -rf "${BUILD_ROOT}" "${DIST_PATH}" "${DERIVED_DATA_PATH}"
 mkdir -p "${BUILD_ROOT}" "${DIST_PATH}"
@@ -127,6 +133,7 @@ xcodebuild \
   MARKETING_VERSION="${MARKETING_VERSION}" \
   CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION}" \
   SPARKLE_FEED_URL="${SPARKLE_FEED_URL}" \
+  SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL}" \
   SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY}" \
   archive
 
@@ -145,23 +152,25 @@ fi
 BUILT_MARKETING_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_PATH}/Contents/Info.plist")
 BUILT_BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${APP_PATH}/Contents/Info.plist")
 BUILT_FEED_URL=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "${APP_PATH}/Contents/Info.plist")
+BUILT_BETA_FEED_URL=$(/usr/libexec/PlistBuddy -c "Print :SUBetaFeedURL" "${APP_PATH}/Contents/Info.plist")
 BUILT_PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "${APP_PATH}/Contents/Info.plist")
 
 if [[ "${BUILT_MARKETING_VERSION}" != "${RELEASE_VERSION}" ||
-      "${BUILT_BUNDLE_VERSION}" != "${RELEASE_VERSION}" ]]; then
-  echo "error: exported app version does not match ${RELEASE_VERSION}" >&2
+      "${BUILT_BUNDLE_VERSION}" != "${RELEASE_BUILD_VERSION}" ]]; then
+  echo "error: exported app version does not match ${RELEASE_VERSION} (${RELEASE_BUILD_VERSION})" >&2
   exit 1
 fi
 
 if [[ "${BUILT_FEED_URL}" != "${SPARKLE_FEED_URL}" ||
+      "${BUILT_BETA_FEED_URL}" != "${SPARKLE_BETA_FEED_URL}" ||
       "${BUILT_PUBLIC_KEY}" != "${SPARKLE_PUBLIC_ED_KEY}" ]]; then
   echo "error: exported app does not contain the requested Sparkle configuration" >&2
   exit 1
 fi
 
-ZIP_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-arm64.zip"
-DMG_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-arm64.dmg"
-CHECKSUMS_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-SHA256SUMS.txt"
+ZIP_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+DMG_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
+CHECKSUMS_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt"
 
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
@@ -172,6 +181,8 @@ if (( ${#NOTARY_ARGS[@]} > 0 )); then
   xcrun notarytool submit "${ZIP_PATH}" --wait "${NOTARY_ARGS[@]}"
   xcrun stapler staple "${APP_PATH}"
   spctl --assess --type execute --verbose=4 "${APP_PATH}"
+  # Recreate the archive so the distributed app contains the stapled ticket.
+  ditto -c -k --sequesterRsrc --keepParent "${APP_PATH}" "${ZIP_PATH}"
 else
   echo "warning: notarization credentials were not provided; ZIP and DMG will not be notarized" >&2
 fi

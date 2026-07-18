@@ -11,7 +11,8 @@ function require_env() {
 }
 
 required_vars=(
-  RELEASE_VERSION
+  RELEASE_MARKETING_VERSION
+  RELEASE_BUILD_VERSION
   UPDATE_ARCHIVE_PATH
   RELEASE_NOTES_PATH
   APPCAST_OUTPUT_PATH
@@ -27,8 +28,11 @@ for name in "${required_vars[@]}"; do
   require_env "${name}"
 done
 
-version="${RELEASE_VERSION#v}"
-"${0:A:h}/validate-release-version.sh" "${version}" >/dev/null
+marketing_version="${RELEASE_MARKETING_VERSION#v}"
+bundle_version="${RELEASE_BUILD_VERSION}"
+artifact_version="${bundle_version/fc/-fc}"
+"${0:A:h}/validate-release-version.sh" \
+  "${marketing_version}" "${bundle_version}" >/dev/null
 
 if [[ ! -f "${UPDATE_ARCHIVE_PATH}" ]]; then
   echo "error: update archive not found: ${UPDATE_ARCHIVE_PATH}" >&2
@@ -57,8 +61,8 @@ function cleanup() {
 }
 trap cleanup EXIT
 
-archive_name="SpaceRabbit-${version}-arm64.zip"
-notes_name="SpaceRabbit-${version}-arm64.md"
+archive_name="SpaceRabbit-${artifact_version}-arm64.zip"
+notes_name="SpaceRabbit-${artifact_version}-arm64.md"
 cp "${UPDATE_ARCHIVE_PATH}" "${work_dir}/${archive_name}"
 cp "${RELEASE_NOTES_PATH}" "${work_dir}/${notes_name}"
 
@@ -67,7 +71,7 @@ print -rn -- "${SPARKLE_ED_PRIVATE_KEY}" | "${SPARKLE_GENERATE_APPCAST}" \
   --download-url-prefix "${DOWNLOAD_URL_PREFIX%/}/" \
   --release-notes-url-prefix "${RELEASE_NOTES_URL_PREFIX%/}/" \
   --link "https://github.com/animaslabs/spacerabbit" \
-  --versions "${version}" \
+  --versions "${bundle_version}" \
   --maximum-versions 1 \
   --maximum-deltas 0 \
   -o "${work_dir}/appcast.xml" \
@@ -86,6 +90,9 @@ fi
 appcast_version=$(xmllint --xpath \
   'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="version"])' \
   "${work_dir}/appcast.xml")
+appcast_marketing_version=$(xmllint --xpath \
+  'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="shortVersionString"])' \
+  "${work_dir}/appcast.xml")
 enclosure_url=$(xmllint --xpath \
   'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@url)' \
   "${work_dir}/appcast.xml")
@@ -100,8 +107,10 @@ enclosure_signature=$(xmllint --xpath \
   "${work_dir}/appcast.xml")
 
 expected_url="${DOWNLOAD_URL_PREFIX%/}/${archive_name}"
-if [[ "${appcast_version}" != "${version}" || "${enclosure_url}" != "${expected_url}" ]]; then
-  echo "error: generated appcast has version ${appcast_version} and URL ${enclosure_url}; expected ${version} and ${expected_url}" >&2
+if [[ "${appcast_version}" != "${bundle_version}" ||
+      "${appcast_marketing_version}" != "${marketing_version}" ||
+      "${enclosure_url}" != "${expected_url}" ]]; then
+  echo "error: generated appcast has versions ${appcast_marketing_version}/${appcast_version} and URL ${enclosure_url}; expected ${marketing_version}/${bundle_version} and ${expected_url}" >&2
   exit 1
 fi
 

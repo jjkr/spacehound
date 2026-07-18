@@ -1,8 +1,17 @@
 {
-  "app": "pnpm exec tsx bin/update-infrastructure.ts",
+  "app": "npm exec -- tsx bin/update-infrastructure.ts",
   "context": {
-    "domainName": "updates.spacerabbit.io",
+    "betaAccount": "499246566000",
+    "betaDomainName": "beta-updates.getspacerabbit.com",
+    "betaGitHubEnvironment": "beta",
+    "githubBranch": "main",
+    "githubConnectionArn": "",
     "githubRepository": "animaslabs/spacerabbit",
-    "hostedZoneName": "spacerabbit.io"
+    "infraAccount": "155091848123",
+    "parentHostedZoneId": "",
+    "prodAccount": "772699011759",
+    "prodDomainName": "updates.getspacerabbit.com",
+    "prodGitHubEnvironment": "production",
+    "rootDomainName": "getspacerabbit.com"
   }
 }

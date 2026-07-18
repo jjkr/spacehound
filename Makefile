@@ -18,7 +18,7 @@ help:
 	@echo "  make release            Build $(SCHEME) with CONFIGURATION=Release (unsigned)"
 	@echo "  make package-release    Archive, sign, notarize, and package Release artifacts"
 	@echo "  make release-script-tests  Test release version validation"
-	@echo "  make infra-install      Install pinned CDK dependencies with mise/pnpm"
+	@echo "  make infra-install      Install pinned CDK dependencies with mise/npm"
 	@echo "  make infra-test         Type-check and test the CDK stack"
 	@echo "  make run                Build and launch the app bundle"
 	@echo "  make open               Launch the existing built app bundle"
@@ -52,11 +52,11 @@ release-script-tests:
 	./scripts/tests/release-scripts-test.sh
 
 infra-install:
-	mise exec -- pnpm --dir infra install --frozen-lockfile
+	mise exec -- npm --prefix infra ci
 
 infra-test:
-	mise exec -- pnpm --dir infra run build
-	mise exec -- pnpm --dir infra test
+	mise exec -- npm --prefix infra run build
+	mise exec -- npm --prefix infra test
 
 run: build
 	open "$(APP_PATH)"
