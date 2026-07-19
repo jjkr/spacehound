@@ -37,14 +37,16 @@ expect_failure "${validator}" 1.2.3 1.2.3fc0
 expect_failure "${validator}" 1.2.3 1.2.3fc256
 expect_failure "${validator}" 1.2.3 1.2.3fc01
 
-if missing_token_output=$(env DEVELOPMENT_TEAM=test-team SENTRY_DSN=test-dsn \
+if missing_token_output=$(env -u SENTRY_AUTH_TOKEN \
+  DEVELOPMENT_TEAM=test-team SENTRY_DSN=test-dsn \
   "${package_script}" 2>&1); then
   echo "error: expected package script to reject a missing Sentry auth token" >&2
   exit 1
 fi
 grep -q 'SENTRY_AUTH_TOKEN must be set' <<< "${missing_token_output}"
 
-if missing_dsn_output=$(env DEVELOPMENT_TEAM=test-team SENTRY_AUTH_TOKEN=test-token \
+if missing_dsn_output=$(env -u SENTRY_DSN \
+  DEVELOPMENT_TEAM=test-team SENTRY_AUTH_TOKEN=test-token \
   "${package_script}" 2>&1); then
   echo "error: expected package script to reject a missing Sentry DSN" >&2
   exit 1
