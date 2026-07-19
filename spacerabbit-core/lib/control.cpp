@@ -1,6 +1,7 @@
 #include <spacerabbit/control.hpp>
 
 #include "internal/control_internal.hpp"
+#include "internal/logging.hpp"
 
 #include <ApplicationServices/ApplicationServices.h>
 
@@ -31,6 +32,7 @@ namespace cg = spacerabbit::cg;
 namespace cgs = spacerabbit::cgs;
 namespace detail = spacerabbit::control::detail;
 namespace gesture = spacerabbit::gesture;
+namespace diagnostics = spacerabbit::diagnostics;
 
 inline const auto display_identifier_key = cf::string_view{CFSTR("Display Identifier")};
 inline const auto spaces_key = cf::string_view{CFSTR("Spaces")};
@@ -65,6 +67,21 @@ auto state_error(std::string message) -> error {
 
 auto runtime_error(std::string message) -> error {
   return make_error(error_code::runtime_error, std::move(message));
+}
+
+auto error_code_name(error_code code) noexcept -> const char * {
+  switch (code) {
+    case error_code::permission_denied:
+      return "permission-denied";
+    case error_code::invalid_request:
+      return "invalid-request";
+    case error_code::state_unavailable:
+      return "state-unavailable";
+    case error_code::runtime_error:
+      return "runtime-error";
+  }
+
+  return "unknown";
 }
 
 auto dictionary_number_int64(
@@ -389,14 +406,34 @@ auto action_name(const control::request &request) noexcept -> std::string_view {
       [](const auto &typed_request) -> std::string_view {
         using request_type = std::decay_t<decltype(typed_request)>;
         if constexpr (std::is_same_v<request_type, workspace_request>) {
-          return "workspace";
+          switch (typed_request.action) {
+            case workspace_action::left:
+              return "workspace-left";
+            case workspace_action::right:
+              return "workspace-right";
+            case workspace_action::go_to:
+              return "workspace-go-to";
+          }
         } else if constexpr (std::is_same_v<request_type, display_request>) {
-          return "display";
+          switch (typed_request.action) {
+            case display_action::left:
+              return "display-left";
+            case display_action::right:
+              return "display-right";
+            case display_action::go_to:
+              return "display-go-to";
+          }
         } else if constexpr (std::is_same_v<request_type, window_focus_request>) {
-          return "window-focus";
+          return typed_request.direction == window_focus_direction::next
+                     ? "window-focus-next"
+                     : "window-focus-previous";
         } else {
-          return "system-ui";
+          return typed_request.element == system_ui_element::mission_control
+                     ? "system-ui-mission-control"
+                     : "system-ui-expose";
         }
+
+        return "unknown";
       },
       request);
 }
@@ -478,12 +515,21 @@ auto plan_workspace_request(
 auto execute_request(
     const control::request &request,
     cg::event_source_view synthetic_source) -> std::expected<void, control::error> {
+  const auto name = action_name(request);
+  os_log_debug(diagnostics::navigation_log(),
+               "Action execution started (type=%{public}s)",
+               name.data());
+
   const auto permission = ensure_accessibility_permission();
   if (!permission) {
+    os_log_error(diagnostics::navigation_log(),
+                 "Action execution failed (type=%{public}s code=%{public}s)",
+                 name.data(),
+                 error_code_name(permission.error().code));
     return std::unexpected(permission.error());
   }
 
-  return std::visit(
+  auto result = std::visit(
       [&](const auto &typed_request) -> std::expected<void, control::error> {
         using request_type = std::decay_t<decltype(typed_request)>;
         if constexpr (std::is_same_v<request_type, workspace_request>) {
@@ -501,6 +547,19 @@ auto execute_request(
         }
       },
       request);
+
+  if (result.has_value()) {
+    os_log_debug(diagnostics::navigation_log(),
+                 "Action execution completed (type=%{public}s)",
+                 name.data());
+  } else {
+    os_log_error(diagnostics::navigation_log(),
+                 "Action execution failed (type=%{public}s code=%{public}s)",
+                 name.data(),
+                 error_code_name(result.error().code));
+  }
+
+  return result;
 }
 
 }  // namespace detail
@@ -509,6 +568,10 @@ auto execute(const request &request) -> std::expected<void, error> {
   const auto synthetic_source =
       cg::event_source::create(kCGEventSourceStateHIDSystemState);
   if (!synthetic_source) {
+    const auto name = detail::action_name(request);
+    os_log_error(diagnostics::navigation_log(),
+                 "Action setup failed (type=%{public}s code=event-source-unavailable)",
+                 name.data());
     return std::unexpected(runtime_error("Failed to create a synthetic Core Graphics event source."));
   }
 

@@ -2,6 +2,7 @@
 
 #include "internal/control_internal.hpp"
 #include "internal/daemon_internal.hpp"
+#include "internal/logging.hpp"
 
 #include <Carbon/Carbon.h>
 #include <dispatch/source.h>
@@ -15,7 +16,6 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -43,6 +43,7 @@ namespace cg = spacerabbit::cg;
 namespace control = spacerabbit::control;
 namespace cgs = spacerabbit::cgs;
 namespace dispatch = spacerabbit::dispatch;
+namespace diagnostics = spacerabbit::diagnostics;
 namespace gesture = spacerabbit::gesture;
 namespace ns = spacerabbit::ns;
 namespace settings = spacerabbit::settings;
@@ -536,9 +537,10 @@ auto compile_action(
 }
 
 auto log_inert_actions(const detail::runtime_config &config) -> void {
-  for (const auto &action_id : config.inert_action_ids) {
-    std::cerr << "Configured hotkey action is currently inert in spacerabbitd v1: " << action_id
-              << '\n';
+  if (!config.inert_action_ids.empty()) {
+    os_log_error(diagnostics::settings_log(),
+                 "Runtime settings contain inert actions (count=%{public}lu)",
+                 static_cast<unsigned long>(config.inert_action_ids.size()));
   }
 }
 
@@ -566,8 +568,9 @@ auto compile_fast_swipe_replay(
     gesture::direction swipe_direction,
     const cg::event_source &source) -> bool {
   if (!gesture::post_swipe(source.view(), swipe_direction)) {
-    std::cerr << "Failed to replay synthetic fast swipe for "
-              << gesture_direction_name(swipe_direction) << ".\n";
+    os_log_error(diagnostics::navigation_log(),
+                 "Fast swipe replay failed (direction=%{public}s)",
+                 gesture_direction_name(swipe_direction).data());
     return false;
   }
 
@@ -583,7 +586,8 @@ auto initialize_runtime(
   context.synthetic_source =
       cg::event_source::create(kCGEventSourceStateHIDSystemState);
   if (!context.synthetic_source) {
-    std::cerr << "Failed to create synthetic CoreGraphics event source.\n";
+    os_log_error(diagnostics::lifecycle_log(),
+                 "Runtime initialization failed (code=event-source-unavailable)");
     return false;
   }
 
@@ -602,6 +606,13 @@ auto initialize_runtime(
             const auto event = cg::event_view{event_ref};
 
             if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+              if (type == kCGEventTapDisabledByTimeout) {
+                os_log_error(diagnostics::lifecycle_log(),
+                             "Event tap disabled by timeout; requesting re-enable");
+              } else {
+                os_log_error(diagnostics::lifecycle_log(),
+                             "Event tap disabled by user input; requesting re-enable");
+              }
               if (context != nullptr && context->tap) {
                 context->tap.enable(true);
               }
@@ -625,15 +636,22 @@ auto initialize_runtime(
               }
 
               if (phase == gesture::phase::begin) {
+                os_log_debug(diagnostics::navigation_log(),
+                             "Fast swipe recognized (direction=%{public}s)",
+                             gesture_direction_name(swipe_direction).data());
                 if (is_horizontal_direction(swipe_direction)) {
                   space_bounds bounds{};
                   if (active_display_space_bounds(bounds)) {
                     if (swipe_direction == gesture::direction::left && bounds.current_index == 0) {
+                      os_log_debug(diagnostics::navigation_log(),
+                                   "Fast swipe suppressed at workspace boundary (direction=left)");
                       return nullptr;
                     }
 
                     if (swipe_direction == gesture::direction::right &&
                         bounds.current_index >= bounds.num_spaces - 1) {
+                      os_log_debug(diagnostics::navigation_log(),
+                                   "Fast swipe suppressed at workspace boundary (direction=right)");
                       return nullptr;
                     }
                   }
@@ -642,6 +660,9 @@ auto initialize_runtime(
                 if (!compile_fast_swipe_replay(swipe_direction, context->synthetic_source)) {
                   return event_ref;
                 }
+                os_log_debug(diagnostics::navigation_log(),
+                             "Fast swipe replay completed (direction=%{public}s)",
+                             gesture_direction_name(swipe_direction).data());
               }
 
               return nullptr;
@@ -663,12 +684,7 @@ auto initialize_runtime(
                 continue;
               }
 
-              const auto result = execute_hotkey(*context, hotkey);
-              if (!result) {
-                std::cerr << "Failed to execute hotkey action " << hotkey.action_id << " ("
-                          << control::detail::action_name(hotkey.request)
-                          << "): " << result.error().message << '\n';
-              }
+              (void)execute_hotkey(*context, hotkey);
               return nullptr;
             }
 
@@ -676,14 +692,16 @@ auto initialize_runtime(
           },
       &context);
   if (!tap) {
-    std::cerr << "Failed to create HID event tap.\n";
+    os_log_error(diagnostics::lifecycle_log(),
+                 "Runtime initialization failed (code=event-tap-unavailable)");
     return false;
   }
 
   context.tap = tap.view();
   run_loop_source = tap.create_run_loop_source();
   if (!run_loop_source) {
-    std::cerr << "Failed to create run loop source for event tap.\n";
+    os_log_error(diagnostics::lifecycle_log(),
+                 "Runtime initialization failed (code=run-loop-source-unavailable)");
     return false;
   }
 
@@ -716,6 +734,10 @@ class runtime::impl final {
 
   auto apply_settings_document(const settings::document &document) -> void {
     context.config = detail::compile_runtime_config(document);
+    os_log_info(diagnostics::settings_log(),
+                "Runtime settings compiled (active-hotkeys=%{public}lu inert-actions=%{public}lu)",
+                static_cast<unsigned long>(context.config.active_hotkeys.size()),
+                static_cast<unsigned long>(context.config.inert_action_ids.size()));
     log_inert_actions(context.config);
   }
 
@@ -726,20 +748,23 @@ class runtime::impl final {
 
     workspace = ns::workspace::shared();
     if (!workspace) {
-      std::cerr << "Failed to access NSWorkspace for active Space observation.\n";
+      os_log_error(diagnostics::lifecycle_log(),
+                   "Active Space observer setup failed (code=workspace-unavailable)");
       return false;
     }
 
     workspace_notification_center = workspace.notification_center();
     if (!workspace_notification_center) {
-      std::cerr << "Failed to access NSWorkspace notification center.\n";
+      os_log_error(diagnostics::lifecycle_log(),
+                   "Active Space observer setup failed (code=notification-center-unavailable)");
       return false;
     }
 
     active_space_observer = workspace_notification_center.add_observer(
         ns::active_space_did_change_notification(), &impl::handle_active_space_change, this);
     if (!active_space_observer) {
-      std::cerr << "Failed to observe active Space changes.\n";
+      os_log_error(diagnostics::lifecycle_log(),
+                   "Active Space observer setup failed (code=observer-registration-failed)");
       return false;
     }
 
@@ -753,6 +778,8 @@ class runtime::impl final {
 
     const auto state = read_workspace_state();
     if (!state) {
+      os_log_debug(diagnostics::navigation_log(),
+                   "Active workspace state unavailable during change notification");
       return;
     }
 

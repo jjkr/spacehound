@@ -29,6 +29,8 @@ Key source files:
 - `SpaceRabbitApp/Sources/SRPermissions.m` — Accessibility access checks.
 - `SpaceRabbitApp/Sources/SRLogging.m` — local Apple unified-log categories and
   subsystem definitions.
+- `spacerabbit-core/lib/internal/logging.hpp` — the matching internal logging
+  definitions used by the C++ runtime.
 - `spacerabbit-core/` — the C++ runtime that performs Space/display/window
   switching. See `spacerabbit-core/docs/` for the settings schema and API notes.
 - Sparkle 2 — checks the signed appcast and safely replaces/relaunches the app.
@@ -69,7 +71,8 @@ The app launches as a menu bar item and can be exited from `Quit SpaceRabbit`.
 SpaceRabbit writes structured diagnostics to Apple's unified logging system
 under subsystem `com.animaslabs.SpaceRabbit`. Logs are categorized as
 `lifecycle`, `permissions`, `navigation`, `settings`, `updates`, and
-`login-item`. They stay on the Mac and are not forwarded to Sentry.
+`login-item`. The app and C++ runtime share this subsystem and category set.
+The entries stay on the Mac and are not forwarded to Sentry.
 
 Stream logs while exercising a development build:
 

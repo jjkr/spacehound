@@ -16,6 +16,64 @@ auto make_rect(double x, double y, double width, double height) -> CGRect {
   return CGRectMake(x, y, width, height);
 }
 
+TEST(control_tests, action_names_are_stable_and_omit_request_indices) {
+  EXPECT_EQ(
+      detail::action_name(control::workspace_request{
+          .action = control::workspace_action::left,
+      }),
+      "workspace-left");
+  EXPECT_EQ(
+      detail::action_name(control::workspace_request{
+          .action = control::workspace_action::right,
+      }),
+      "workspace-right");
+  EXPECT_EQ(
+      detail::action_name(control::workspace_request{
+          .action = control::workspace_action::go_to,
+          .index = 42,
+      }),
+      "workspace-go-to");
+
+  EXPECT_EQ(
+      detail::action_name(control::display_request{
+          .action = control::display_action::left,
+      }),
+      "display-left");
+  EXPECT_EQ(
+      detail::action_name(control::display_request{
+          .action = control::display_action::right,
+      }),
+      "display-right");
+  EXPECT_EQ(
+      detail::action_name(control::display_request{
+          .action = control::display_action::go_to,
+          .index = 42,
+      }),
+      "display-go-to");
+
+  EXPECT_EQ(
+      detail::action_name(control::window_focus_request{
+          .direction = control::window_focus_direction::next,
+      }),
+      "window-focus-next");
+  EXPECT_EQ(
+      detail::action_name(control::window_focus_request{
+          .direction = control::window_focus_direction::previous,
+      }),
+      "window-focus-previous");
+
+  EXPECT_EQ(
+      detail::action_name(control::system_ui_request{
+          .element = control::system_ui_element::mission_control,
+      }),
+      "system-ui-mission-control");
+  EXPECT_EQ(
+      detail::action_name(control::system_ui_request{
+          .element = control::system_ui_element::expose,
+      }),
+      "system-ui-expose");
+}
+
 TEST(control_tests, workspace_motion_plans_relative_moves_and_wraps) {
   const control::workspace_request left{
       .action = control::workspace_action::left,
