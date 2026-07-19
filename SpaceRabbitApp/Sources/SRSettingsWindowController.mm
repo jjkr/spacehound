@@ -1,6 +1,7 @@
 #import "SRSettingsWindowController.h"
 
 #import "SRLoginItemManager.h"
+#import "SRLogging.h"
 #import "SRSettingsStore.h"
 
 #pragma mark - Shortcut vocabulary helpers
@@ -609,6 +610,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 }
 
 - (void)showWindowAndActivate {
+  os_log_info(SRLogSettings(), "Opening settings window");
   [self reloadFromDisk:nil];
   [self showWindow:nil];
   [NSApp activateIgnoringOtherApps:YES];
@@ -936,21 +938,32 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 - (void)reloadFromDisk:(id)sender {
   (void)sender;
 
+  os_log_debug(SRLogSettings(), "Reloading settings from disk");
   NSError *pathError = nil;
   NSURL *settingsURL = [SRSettingsStore settingsFileURL:&pathError];
   if (settingsURL == nil) {
-    [self presentSettingsError:pathError ?: [NSError errorWithDomain:NSCocoaErrorDomain
-                                                                code:NSFileReadUnknownError
-                                                            userInfo:@{NSLocalizedDescriptionKey : @"Failed to locate settings.json."}]];
+    NSError *effectiveError = pathError ?: [NSError errorWithDomain:NSCocoaErrorDomain
+                                                               code:NSFileReadUnknownError
+                                                           userInfo:@{NSLocalizedDescriptionKey : @"Failed to locate settings.json."}];
+    os_log_error(SRLogSettings(),
+                 "Failed to locate settings (domain=%{private}@ code=%{public}ld)",
+                 effectiveError.domain,
+                 (long)effectiveError.code);
+    [self presentSettingsError:effectiveError];
     return;
   }
 
   NSError *loadError = nil;
   SRSettingsDocument *document = [SRSettingsStore loadDocument:&loadError];
   if (document == nil) {
-    [self presentSettingsError:loadError ?: [NSError errorWithDomain:NSCocoaErrorDomain
-                                                                code:NSFileReadUnknownError
-                                                            userInfo:@{NSLocalizedDescriptionKey : @"Failed to load settings.json."}]];
+    NSError *effectiveError = loadError ?: [NSError errorWithDomain:NSCocoaErrorDomain
+                                                               code:NSFileReadUnknownError
+                                                           userInfo:@{NSLocalizedDescriptionKey : @"Failed to load settings.json."}];
+    os_log_error(SRLogSettings(),
+                 "Failed to load settings (domain=%{private}@ code=%{public}ld)",
+                 effectiveError.domain,
+                 (long)effectiveError.code);
+    [self presentSettingsError:effectiveError];
     return;
   }
 
@@ -958,11 +971,13 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [self applyDocumentToControls:document];
   [self reloadLaunchAtLoginState];
   self.statusLabel.stringValue = @"";
+  os_log_info(SRLogSettings(), "Settings reloaded from disk");
 }
 
 - (void)saveSettings:(id)sender {
   (void)sender;
 
+  os_log_info(SRLogSettings(), "Saving settings");
   SRSettingsDocument *document = [[SRSettingsDocument alloc] init];
   document.version = @"1.0";
   document.workspaceWrap = (self.workspaceWrapButton.state == NSControlStateValueOn);
@@ -979,15 +994,24 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
   NSError *saveError = nil;
   if (![SRSettingsStore saveDocument:document error:&saveError]) {
-    [self presentSettingsError:saveError ?: [NSError errorWithDomain:NSCocoaErrorDomain
-                                                                code:NSFileWriteUnknownError
-                                                            userInfo:@{NSLocalizedDescriptionKey : @"Failed to save settings.json."}]];
+    NSError *effectiveError = saveError ?: [NSError errorWithDomain:NSCocoaErrorDomain
+                                                               code:NSFileWriteUnknownError
+                                                           userInfo:@{NSLocalizedDescriptionKey : @"Failed to save settings.json."}];
+    os_log_error(SRLogSettings(),
+                 "Failed to save settings (domain=%{private}@ code=%{public}ld)",
+                 effectiveError.domain,
+                 (long)effectiveError.code);
+    [self presentSettingsError:effectiveError];
     return;
   }
 
   if (self.applyHandler != nil) {
     NSError *applyError = nil;
     if (!self.applyHandler(&applyError)) {
+      os_log_error(SRLogSettings(),
+                   "Runtime failed to apply saved settings (domain=%{private}@ code=%{public}ld)",
+                   applyError.domain,
+                   (long)applyError.code);
       self.statusLabel.stringValue = @"Saved to disk, but the runtime could not apply the update.";
       if (applyError != nil) {
         [self presentSettingsError:applyError];
@@ -1005,6 +1029,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [self reloadLaunchAtLoginState];
 
   if (launchAtLoginEnabled && loginItemStatus == SRLoginItemStatusRequiresApproval) {
+    os_log_info(SRLogLoginItem(), "Launch at login requires approval");
     self.statusLabel.stringValue = @"Saved. Launch at login requires approval.";
     [self presentLaunchAtLoginApproval];
     return;
@@ -1015,6 +1040,10 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
       : (loginItemStatus == SRLoginItemStatusNotRegistered ||
          loginItemStatus == SRLoginItemStatusNotFound);
   if (!loginItemChanged || !loginItemMatchesRequestedState) {
+    os_log_error(SRLogLoginItem(),
+                 "Launch at login did not reach the requested state (domain=%{private}@ code=%{public}ld)",
+                 loginItemError.domain,
+                 (long)loginItemError.code);
     self.statusLabel.stringValue = @"Settings saved, but launch at login could not be updated.";
     [self presentSettingsError:loginItemError ?:
         [NSError errorWithDomain:@"com.animaslabs.SpaceRabbit.LoginItem"
@@ -1027,6 +1056,7 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   }
 
   self.statusLabel.stringValue = @"Saved and applied.";
+  os_log_info(SRLogSettings(), "Settings saved and applied");
 }
 
 - (void)reloadLaunchAtLoginState {
@@ -1056,16 +1086,23 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 - (void)revealSettingsFile:(id)sender {
   (void)sender;
 
+  os_log_info(SRLogSettings(), "Reveal settings file requested");
   NSError *error = nil;
   NSURL *settingsURL = [SRSettingsStore settingsFileURL:&error];
   if (settingsURL == nil) {
-    [self presentSettingsError:error ?: [NSError errorWithDomain:NSCocoaErrorDomain
-                                                            code:NSFileNoSuchFileError
-                                                        userInfo:@{NSLocalizedDescriptionKey : @"Failed to locate settings.json."}]];
+    NSError *effectiveError = error ?: [NSError errorWithDomain:NSCocoaErrorDomain
+                                                           code:NSFileNoSuchFileError
+                                                       userInfo:@{NSLocalizedDescriptionKey : @"Failed to locate settings.json."}];
+    os_log_error(SRLogSettings(),
+                 "Failed to reveal settings (domain=%{private}@ code=%{public}ld)",
+                 effectiveError.domain,
+                 (long)effectiveError.code);
+    [self presentSettingsError:effectiveError];
     return;
   }
 
   [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[settingsURL]];
+  os_log_info(SRLogSettings(), "Settings file revealed in Finder");
 }
 
 - (void)trayScrollChanged:(id)sender {

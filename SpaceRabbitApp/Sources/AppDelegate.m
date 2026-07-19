@@ -1,4 +1,5 @@
 #import "AppDelegate.h"
+#import "SRLogging.h"
 #import "SRPermissions.h"
 #import "SRRuntimeHost.h"
 #import "SRSettingsWindowController.h"
@@ -25,6 +26,7 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
   (void)notification;
 
+  os_log_info(SRLogLifecycle(), "Application finished launching");
   [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 
   // Start the updater independently of Accessibility permission and the
@@ -35,11 +37,15 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
         [[SPUStandardUpdaterController alloc] initWithStartingUpdater:YES
                                                      updaterDelegate:self
                                                   userDriverDelegate:nil];
+    os_log_info(SRLogUpdates(), "Automatic update service started");
+  } else {
+    os_log_info(SRLogUpdates(), "Automatic update service disabled because no public key is configured");
   }
 
   self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
   NSStatusBarButton *button = self.statusItem.button;
   if (button == nil) {
+    os_log_fault(SRLogLifecycle(), "Status bar button was unavailable; launch cannot continue");
     return;
   }
 
@@ -119,10 +125,12 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
   };
 
   [self startRuntimeOrRequestAccess];
+  os_log_info(SRLogLifecycle(), "Application launch setup completed");
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
   (void)notification;
+  os_log_info(SRLogLifecycle(), "Application will terminate");
   [self.accessibilityPollTimer invalidate];
   self.accessibilityPollTimer = nil;
   [self.runtimeHost stop];
@@ -130,12 +138,14 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
 
 - (void)quit:(id)sender {
   (void)sender;
+  os_log_info(SRLogLifecycle(), "Quit requested from the status menu");
   [self.runtimeHost stop];
   [NSApp terminate:nil];
 }
 
 - (void)openSettings:(id)sender {
   (void)sender;
+  os_log_info(SRLogSettings(), "Settings window requested");
   [self.settingsWindowController showWindowAndActivate];
 }
 
@@ -170,6 +180,7 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
     [alert addButtonWithTitle:@"Receive Beta Updates"];
     [alert addButtonWithTitle:@"Cancel"];
     if ([alert runModal] != NSAlertFirstButtonReturn) {
+      os_log_info(SRLogUpdates(), "Beta update opt-in cancelled");
       return;
     }
   }
@@ -177,11 +188,17 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
   [[NSUserDefaults standardUserDefaults] setBool:enabling forKey:SRReceiveBetaUpdatesKey];
   self.receiveBetaUpdatesItem.state = enabling ? NSControlStateValueOn : NSControlStateValueOff;
   [self.updaterController.updater resetUpdateCycle];
+  if (enabling) {
+    os_log_info(SRLogUpdates(), "Beta update channel enabled");
+  } else {
+    os_log_info(SRLogUpdates(), "Beta update channel disabled");
+  }
 }
 
 - (void)grantAccess:(id)sender {
   (void)sender;
   if ([SRPermissions hasAccessibilityAccess]) {
+    os_log_info(SRLogPermissions(), "Accessibility access already granted");
     [self enterReadyState];
     [self.runtimeHost start];
     return;
@@ -195,11 +212,13 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
 // surfaces the "needs access" state and walks the user through granting it.
 - (void)startRuntimeOrRequestAccess {
   if ([SRPermissions hasAccessibilityAccess]) {
+    os_log_info(SRLogPermissions(), "Accessibility access granted at launch");
     [self enterReadyState];
     [self.runtimeHost start];
     return;
   }
 
+  os_log_info(SRLogPermissions(), "Accessibility access is required");
   [self enterNeedsAccessibilityState];
   [self presentAccessibilityPrompt];
 }
@@ -248,10 +267,13 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
 
   const NSModalResponse response = [alert runModal];
   if (response == NSAlertFirstButtonReturn) {
+    os_log_info(SRLogPermissions(), "Accessibility settings requested from the launch prompt");
     [self beginRequestingAccessibilityAccess];
   } else if (response == NSAlertThirdButtonReturn) {
+    os_log_info(SRLogPermissions(), "Quit selected from the accessibility prompt");
     [NSApp terminate:nil];
   } else {
+    os_log_info(SRLogPermissions(), "Accessibility prompt deferred");
     // "Not Now": leave the badge up and keep watching so the runtime starts on
     // its own if the user grants access from System Settings or the menu.
     [self startAccessibilityPolling];
@@ -274,6 +296,7 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
     return;
   }
 
+  os_log_debug(SRLogPermissions(), "Started polling for Accessibility authorization");
   __weak typeof(self) weakSelf = self;
   self.accessibilityPollTimer =
       [NSTimer scheduledTimerWithTimeInterval:1.0
@@ -284,6 +307,7 @@ static NSString *const SRReceiveBetaUpdatesKey = @"SRReceiveBetaUpdates";
                                           }
                                           [timer invalidate];
                                           weakSelf.accessibilityPollTimer = nil;
+                                          os_log_info(SRLogPermissions(), "Accessibility access granted while running");
                                           [weakSelf enterReadyState];
                                           [weakSelf.runtimeHost start];
                                         }];

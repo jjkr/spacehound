@@ -1,5 +1,7 @@
 #import "SRPermissions.h"
 
+#import "SRLogging.h"
+
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 
@@ -12,7 +14,11 @@
 + (void)openAccessibilitySettings {
   NSURL *url = [NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?"
                                     @"Privacy_Accessibility"];
-  [[NSWorkspace sharedWorkspace] openURL:url];
+  if ([[NSWorkspace sharedWorkspace] openURL:url]) {
+    os_log_info(SRLogPermissions(), "Opened Accessibility settings");
+  } else {
+    os_log_error(SRLogPermissions(), "Failed to open Accessibility settings");
+  }
 }
 
 @end

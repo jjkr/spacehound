@@ -1,5 +1,7 @@
 #import "SRLoginItemManager.h"
 
+#import "SRLogging.h"
+
 #import <ServiceManagement/ServiceManagement.h>
 
 @implementation SRLoginItemManager
@@ -25,18 +27,51 @@
 
   if (enabled) {
     if (status == SMAppServiceStatusEnabled || status == SMAppServiceStatusRequiresApproval) {
+      os_log_debug(SRLogLoginItem(), "Launch at login is already registered");
       return YES;
     }
-    return [service registerAndReturnError:error];
+
+    NSError *registerError = nil;
+    const BOOL registered = [service registerAndReturnError:&registerError];
+    if (!registered) {
+      if (error != NULL) {
+        *error = registerError;
+      }
+      os_log_error(SRLogLoginItem(),
+                   "Failed to register launch at login (domain=%{private}@ code=%{public}ld)",
+                   registerError.domain,
+                   (long)registerError.code);
+      return NO;
+    }
+
+    os_log_info(SRLogLoginItem(), "Launch at login registered");
+    return YES;
   }
 
   if (status == SMAppServiceStatusNotRegistered || status == SMAppServiceStatusNotFound) {
+    os_log_debug(SRLogLoginItem(), "Launch at login is already unregistered");
     return YES;
   }
-  return [service unregisterAndReturnError:error];
+
+  NSError *unregisterError = nil;
+  const BOOL unregistered = [service unregisterAndReturnError:&unregisterError];
+  if (!unregistered) {
+    if (error != NULL) {
+      *error = unregisterError;
+    }
+    os_log_error(SRLogLoginItem(),
+                 "Failed to unregister launch at login (domain=%{private}@ code=%{public}ld)",
+                 unregisterError.domain,
+                 (long)unregisterError.code);
+    return NO;
+  }
+
+  os_log_info(SRLogLoginItem(), "Launch at login unregistered");
+  return YES;
 }
 
 + (void)openSystemSettings {
+  os_log_info(SRLogLoginItem(), "Opening Login Items settings");
   [SMAppService openSystemSettingsLoginItems];
 }
 

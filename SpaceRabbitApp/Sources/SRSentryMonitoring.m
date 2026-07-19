@@ -1,5 +1,7 @@
 #import "SRSentryMonitoring.h"
 
+#import "SRLogging.h"
+
 #import <Sentry/Sentry.h>
 
 static NSString *_Nullable SRNonEmptyString(id _Nullable value) {
@@ -35,6 +37,7 @@ static NSString *SRSentryReleaseName(NSBundle *bundle) {
 void SRStartSentryMonitoring(void) {
   NSString *dsn = SRSentryDSN();
   if (dsn == nil) {
+    os_log_info(SRLogLifecycle(), "Crash monitoring disabled because no DSN is configured");
     return;
   }
 
@@ -78,4 +81,6 @@ void SRStartSentryMonitoring(void) {
     options.attachStacktrace = NO;
     options.attachAllThreads = NO;
   }];
+
+  os_log_info(SRLogLifecycle(), "Crash monitoring started");
 }

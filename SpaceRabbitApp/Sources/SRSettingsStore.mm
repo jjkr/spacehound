@@ -1,5 +1,7 @@
 #import "SRSettingsStore.h"
 
+#import "SRLogging.h"
+
 #include <spacerabbit/settings.hpp>
 
 namespace {
@@ -200,6 +202,7 @@ auto normalized_modifiers(NSString *value, NSError **error) -> NSArray<NSString 
     if (![mutableData writeToURL:settingsURL options:NSDataWritingAtomic error:error]) {
       return nil;
     }
+    os_log_info(SRLogSettings(), "Created default settings file");
   }
 
   return settingsURL;

@@ -1,4 +1,5 @@
 #import "SRRuntimeHost.h"
+#import "SRLogging.h"
 #import "SRSettingsStore.h"
 
 #include <spacerabbit/daemon.hpp>
@@ -60,33 +61,46 @@ static void SRRuntimeHostActiveSpaceChanged(
 
 - (void)start {
   if (_runtime.running()) {
+    os_log_debug(SRLogLifecycle(), "Runtime start ignored because it is already running");
     return;
   }
 
+  os_log_info(SRLogLifecycle(), "Runtime starting");
   [self updateMenuBarTitle:@"" statusText:@"Starting..."];
 
   NSError *runtimeError = nil;
   if (![self startRuntime:&runtimeError]) {
+    os_log_error(SRLogLifecycle(),
+                 "Runtime failed to start (domain=%{private}@ code=%{public}ld)",
+                 runtimeError.domain,
+                 (long)runtimeError.code);
     NSString *message = runtimeError.localizedDescription ?: @"Failed to start";
     [self updateMenuBarTitle:@"" statusText:message];
     return;
   }
 
   [self refreshRuntimeState];
+  os_log_info(SRLogLifecycle(), "Runtime started");
 }
 
 - (void)stop {
   if (_runtime.running()) {
+    os_log_info(SRLogLifecycle(), "Runtime stopping");
     _runtime.stop();
+    os_log_info(SRLogLifecycle(), "Runtime stopped");
   }
 
   [self updateMenuBarTitle:@"" statusText:@"Stopped"];
 }
 
 - (BOOL)applySettings:(NSError *_Nullable *_Nullable)error {
+  os_log_info(SRLogSettings(), "Applying settings to the runtime");
   if (_runtime.running()) {
     const auto reloaded = _runtime.reload_settings();
     if (!reloaded.has_value()) {
+      os_log_error(SRLogSettings(),
+                   "Runtime settings reload failed (code=%{public}ld)",
+                   (long)static_cast<NSInteger>(reloaded.error().code));
       if (error != NULL) {
         *error = [self runtimeNSErrorForError:reloaded.error()];
       }
@@ -94,6 +108,7 @@ static void SRRuntimeHostActiveSpaceChanged(
     }
 
     [self refreshRuntimeState];
+    os_log_info(SRLogSettings(), "Runtime settings reload completed");
     return YES;
   }
 
@@ -102,20 +117,31 @@ static void SRRuntimeHostActiveSpaceChanged(
   }
 
   [self refreshRuntimeState];
+  os_log_info(SRLogSettings(), "Runtime started with updated settings");
   return YES;
 }
 
 - (void)setInputSuspended:(BOOL)suspended {
   _runtime.set_input_suspended(suspended ? true : false);
+  if (suspended) {
+    os_log_debug(SRLogNavigation(), "Global input handling suspended for shortcut recording");
+  } else {
+    os_log_debug(SRLogNavigation(), "Global input handling resumed after shortcut recording");
+  }
 }
 
 - (void)handleWorkspaceStateChangeWithCurrentSpace:(NSUInteger)currentSpace
                                          numSpaces:(NSUInteger)numSpaces {
   if (currentSpace == 0 || numSpaces == 0) {
+    os_log_debug(SRLogNavigation(), "Workspace state changed but its bounds are unavailable");
     [self updateMenuBarTitle:@"" statusText:@"Running"];
     return;
   }
 
+  os_log_debug(SRLogNavigation(),
+               "Workspace state changed (current=%{private}lu total=%{private}lu)",
+               (unsigned long)currentSpace,
+               (unsigned long)numSpaces);
   [self updateMenuBarTitle:[NSString stringWithFormat:@"%lu", (unsigned long)currentSpace]
                 statusText:[NSString stringWithFormat:@"Space %lu of %lu",
                                                       (unsigned long)currentSpace,
@@ -154,6 +180,11 @@ static void SRRuntimeHostActiveSpaceChanged(
 - (BOOL)startRuntime:(NSError *_Nullable *_Nullable)error {
   NSURL *settingsURL = [SRSettingsStore settingsFileURL:error];
   if (settingsURL == nil) {
+    NSError *settingsError = error != NULL ? *error : nil;
+    os_log_error(SRLogSettings(),
+                 "Runtime could not locate settings (domain=%{private}@ code=%{public}ld)",
+                 settingsError.domain,
+                 (long)settingsError.code);
     return NO;
   }
 
@@ -164,6 +195,9 @@ static void SRRuntimeHostActiveSpaceChanged(
 
   const auto started = _runtime.start(options);
   if (!started.has_value()) {
+    os_log_error(SRLogLifecycle(),
+                 "Daemon runtime start failed (code=%{public}ld)",
+                 (long)static_cast<NSInteger>(started.error().code));
     if (error != NULL) {
       *error = [self runtimeNSErrorForError:started.error()];
     }
@@ -181,6 +215,7 @@ static void SRRuntimeHostActiveSpaceChanged(
     return;
   }
 
+  os_log_debug(SRLogNavigation(), "Current workspace state is unavailable");
   [self updateMenuBarTitle:@"" statusText:@"Running"];
 }
 
