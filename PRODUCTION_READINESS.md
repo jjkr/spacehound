@@ -12,7 +12,6 @@ the public update endpoints are operational.
 
 The remaining work is concentrated in product behavior and launch operations:
 
-- Remove or implement the currently nonfunctional telemetry setting.
 - Verify the Accessibility workflow on clean machines.
 - Make Apple Silicon-only support explicit, or produce and test a universal build.
 - Test every supported macOS release because core behavior depends on private APIs.
@@ -25,28 +24,17 @@ information that the website must expose, but does not cover its implementation.
 
 ## Launch blockers
 
-### 1. Remove or implement telemetry
+### 1. Crash monitoring and privacy verification
 
-The settings UI currently offers **Enable telemetry**, describes it as sharing
-anonymous usage data, and enables it by default. The repository contains the
-setting parser and UI, but no telemetry transport or reporting implementation.
+The obsolete telemetry setting has been removed. Distributed builds now use a
+privacy-limited Sentry configuration for crashes and uncaught Objective-C
+exceptions only. Release packaging uploads dSYMs and fails if symbol upload is
+unavailable.
 
-Before launch, choose one of these paths:
-
-1. Remove the telemetry setting for now. This is the recommended launch option.
-2. Implement telemetry, make it opt-in, and publish a precise privacy disclosure
-   covering the events, fields, retention, processors, and deletion policy.
-
-Do not ship a control that claims data is being shared when it has no effect.
-
-Relevant code:
-
-- `SpaceRabbitApp/Sources/SRSettingsStore.mm` enables telemetry in the default
-  settings document.
-- `SpaceRabbitApp/Sources/SRSettingsWindowController.mm` presents the telemetry
-  switch and its user-facing description.
-- `spacerabbit-core/lib/settings.cpp` parses the value but no runtime component
-  consumes it.
+Before launch, enable Sentry's default data scrubbing and IP-address scrubbing,
+publish the exact crash-data disclosure, and verify an intentionally crashed
+disposable build produces a correctly symbolicated event. Do not enable broader
+Sentry collection without a separate privacy review.
 
 ### 2. State the hardware requirement accurately
 
@@ -169,25 +157,23 @@ Before launch:
   architecture, macOS version, and update channel.
 - Add **Copy Diagnostics** with a reviewed, privacy-safe payload.
 - Add **Report a Problem** and **Support** actions.
-- Preserve the dSYM generated for every production build in a private,
+- Preserve the dSYM generated for every production build in Sentry and a private,
   access-controlled release artifact.
-- Either add privacy-conscious, opt-in crash reporting or document how users can
-  provide the relevant macOS DiagnosticReport.
 - Verify logs and symbols against an intentionally crashed beta build before
   relying on them.
 
 ### 7. Complete legal, privacy, and public-support basics
 
-The application embeds Sparkle and nlohmann/json, but the shipped bundle does not
-include third-party notices.
+The application embeds Sparkle, Sentry, and nlohmann/json, but the shipped
+bundle does not include third-party notices.
 
 Before launch:
 
-- Include the required Sparkle and nlohmann/json copyright and license notices
-  in the bundle or an in-app acknowledgements view.
-- Publish a privacy policy. If telemetry is removed, the policy can clearly state
-  that the app collects no analytics while explaining automatic update requests
-  and any server logs retained by the update service.
+- Include the required Sparkle, Sentry, and nlohmann/json copyright and license
+  notices in the bundle or an in-app acknowledgements view.
+- Publish a privacy policy that describes Sentry crash reports, automatic update
+  requests, and any server logs retained by the update service while clearly
+  stating that the app collects no usage analytics.
 - Establish a monitored support email or public issue tracker.
 - Publish a security contact and vulnerability-reporting process.
 - If the source repository becomes public, add an explicit project `LICENSE`,
@@ -420,7 +406,7 @@ The following checks passed on July 18, 2026:
 
 ## Recommended implementation order
 
-1. Remove telemetry or implement it correctly.
+1. Verify Sentry privacy settings and symbolication with a disposable crash build.
 2. Verify Accessibility-only operation on clean supported macOS installations.
 3. Decide and publish the Apple Silicon/Intel support policy.
 4. Add PR CI, branch protection, environment approval, and dependency automation.

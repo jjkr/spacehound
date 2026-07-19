@@ -13,8 +13,12 @@ settings:
     SPARKLE_FEED_URL: https://updates.getspacerabbit.com/appcast.xml
     SPARKLE_BETA_FEED_URL: https://beta-updates.getspacerabbit.com/appcast.xml
     SPARKLE_PUBLIC_ED_KEY: ""
+    SENTRY_DSN: ""
 
 packages:
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa
+    exactVersion: 9.13.0
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.9.2
@@ -62,6 +66,7 @@ targets:
         Release:
           ENABLE_HARDENED_RUNTIME: YES
     dependencies:
+      - package: Sentry
       - package: Sparkle
     preBuildScripts:
       - name: Generate spacerabbit version header
@@ -129,6 +134,7 @@ targets:
         SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
         SURequireSignedFeed: true
         SUVerifyUpdateBeforeExtraction: true
+        SentryDSN: $(SENTRY_DSN)
 
 schemes:
   SpaceRabbit:

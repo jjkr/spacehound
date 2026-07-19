@@ -31,6 +31,10 @@ Before the first release, complete the infrastructure setup in
 - Each environment has `AWS_RELEASE_REGION`, `AWS_RELEASE_BUCKET`,
   `AWS_CLOUDFRONT_DISTRIBUTION_ID`, `AWS_RELEASE_ROLE_ARN`, and
   `SPARKLE_PUBLIC_ED_KEY` variables populated from its CDK stack outputs.
+- The `beta` environment has the public `SENTRY_DSN` variable and the private
+  `SENTRY_AUTH_TOKEN` secret. The token must have `org:ci` access.
+- The `animaslabs/spacerabbit` Sentry project has default data scrubbing enabled
+  and **Prevent Storing of IP Addresses** turned on under Security & Privacy.
 - The candidate workflow can access the Developer ID certificate, Apple
   notarization, temporary keychain, and Sparkle private-key secrets listed in
   [DEVELOPMENT.md](DEVELOPMENT.md#release-secrets). Prefer scoping them to the
@@ -124,6 +128,8 @@ Save the numeric candidate run ID. A successful run publishes:
 - A retained GitHub Actions artifact named `SpaceRabbit-X.Y.Z-fcN` containing
   the candidate, authored release notes, and production appcast. It is retained
   for 30 days.
+- The archive's dSYMs to `animaslabs/spacerabbit`. Missing credentials, missing
+  symbols, or a failed upload stops the candidate before publication.
 
 ## 3. Verify the beta
 
@@ -137,6 +143,10 @@ Do not promote until the beta candidate has been approved. At minimum:
   **Check for Updates…**, and install the candidate.
 - Confirm the update signature is accepted, installation completes, the app
   relaunches, and its core behavior works.
+- For the first monitored release, use a disposable pre-release build with a
+  temporary intentional crash, relaunch it to send the cached event, and confirm
+  Sentry shows the expected release/build with symbolicated SpaceRabbit frames.
+  Remove the crash trigger before building the candidate that may be published.
 - Record explicit approval to promote this candidate.
 
 Basic endpoint checks can be run with:

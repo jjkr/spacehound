@@ -565,7 +565,6 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 @property(nonatomic, strong) NSSwitch *trayScrollInvertedButton;
 @property(nonatomic, strong) NSView *trayScrollInvertedRow;
 @property(nonatomic, strong) NSSwitch *fastSwipeButton;
-@property(nonatomic, strong) NSSwitch *telemetryButton;
 @property(nonatomic, strong) NSStackView *hotkeysStackView;
 @property(nonatomic, strong) NSTextField *statusLabel;
 @property(nonatomic, copy) NSArray<SRHotkeyRowView *> *hotkeyRowViews;
@@ -635,7 +634,6 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   self.trayScrollButton.action = @selector(trayScrollChanged:);
   self.trayScrollInvertedButton = [self makeSwitch];
   self.fastSwipeButton = [self makeSwitch];
-  self.telemetryButton = [self makeSwitch];
 
   self.trayScrollInvertedRow = [self toggleRowForSwitch:self.trayScrollInvertedButton
                                                   title:@"Invert tray scroll direction"
@@ -658,9 +656,6 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     [self toggleRowForSwitch:self.fastSwipeButton
                        title:@"Enable fast swipe"
                     subtitle:@"Trigger swipe actions with a lighter, quicker gesture."],
-    [self toggleRowForSwitch:self.telemetryButton
-                       title:@"Enable telemetry"
-                    subtitle:@"Share anonymous usage data to help improve SpaceRabbit."],
   ];
   SRCardView *generalCard = [self cardWithRows:generalRows];
 
@@ -975,7 +970,6 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   document.trayScroll = (self.trayScrollButton.state == NSControlStateValueOn);
   document.trayScrollInverted = (self.trayScrollInvertedButton.state == NSControlStateValueOn);
   document.fastSwipe = (self.fastSwipeButton.state == NSControlStateValueOn);
-  document.telemetryEnabled = (self.telemetryButton.state == NSControlStateValueOn);
 
   NSMutableArray<SRHotkeyItem *> *hotkeys = [NSMutableArray arrayWithCapacity:self.hotkeyRowViews.count];
   for (SRHotkeyRowView *rowView in self.hotkeyRowViews) {
@@ -1091,7 +1085,6 @@ NSString *SRDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   self.trayScrollInvertedButton.state =
       document.trayScrollInverted ? NSControlStateValueOn : NSControlStateValueOff;
   self.fastSwipeButton.state = document.fastSwipe ? NSControlStateValueOn : NSControlStateValueOff;
-  self.telemetryButton.state = document.telemetryEnabled ? NSControlStateValueOn : NSControlStateValueOff;
   [self trayScrollChanged:nil];
 
   for (NSView *view in [self.hotkeysStackView.arrangedSubviews copy]) {

@@ -56,8 +56,7 @@ it is launched outside the app.
       "enabled": true
     }
   },
-  "fastSwipe": true,
-  "telemetryEnabled": true
+  "fastSwipe": true
 }
 ```
 
@@ -123,14 +122,6 @@ Writers should emit the complete set of known action ids. Readers should tolerat
 - default when generating a fresh file: `true`
 
 Controls fast gesture activation for swipe-based actions.
-
-### `telemetryEnabled`
-
-- type: boolean
-- required: yes
-- default when generating a fresh file: `true`
-
-Controls anonymous telemetry and usage reporting.
 
 ## `hotkeySetting`
 
@@ -288,8 +279,7 @@ The canonical default document is:
     "mission_control_toggle": { "key": "w", "modifiers": ["option"], "enabled": true },
     "expose_toggle": { "key": "e", "modifiers": ["option"], "enabled": true }
   },
-  "fastSwipe": true,
-  "telemetryEnabled": true
+  "fastSwipe": true
 }
 ```
 
@@ -330,6 +320,8 @@ Both should be treated as disabled by readers. Writers should prefer one represe
 Readers should behave like this:
 
 - unknown top-level fields are ignored
+- the retired `telemetryEnabled` top-level field is ignored for compatibility
+  with existing settings files and should be removed by writers
 - unknown fields inside hotkey objects are ignored
 - unknown hotkey action ids are preserved or ignored safely
 - missing known hotkey action ids are backfilled with defaults where appropriate
@@ -341,7 +333,7 @@ Readers should enforce at least these rules:
 
 - top-level value must be an object
 - `version` must be a string
-- `workspaceWrap`, `displayWrap`, `trayScroll`, `trayScrollInverted`, `fastSwipe`, and `telemetryEnabled` must be booleans
+- `workspaceWrap`, `displayWrap`, `trayScroll`, `trayScrollInverted`, and `fastSwipe` must be booleans
 - `hotkeys` must be an object
 - each `hotkeys` value must be either `null` or a valid `hotkeySetting`
 - `hotkeySetting.key` must be a non-empty string
@@ -367,8 +359,7 @@ This is a practical draft schema for validation tooling. It encodes the canonica
     "trayScroll",
     "trayScrollInverted",
     "hotkeys",
-    "fastSwipe",
-    "telemetryEnabled"
+    "fastSwipe"
   ],
   "properties": {
     "version": {
@@ -380,7 +371,6 @@ This is a practical draft schema for validation tooling. It encodes the canonica
     "trayScroll": { "type": "boolean" },
     "trayScrollInverted": { "type": "boolean" },
     "fastSwipe": { "type": "boolean" },
-    "telemetryEnabled": { "type": "boolean" },
     "hotkeys": {
       "type": "object",
       "additionalProperties": {

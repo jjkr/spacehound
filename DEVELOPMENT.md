@@ -32,6 +32,9 @@ Key source files:
 - Sparkle 2 — checks the signed appcast and safely replaces/relaunches the app.
   Updater preferences are owned by Sparkle in `NSUserDefaults`, not by the
   runtime's `settings.json` schema.
+- Sentry Cocoa — captures native crashes in distributed builds. Broader Sentry
+  analytics, logs, tracing, replay, screenshots, and network instrumentation are
+  disabled.
 
 ## Prerequisites
 
@@ -58,6 +61,20 @@ make run
 ```
 
 The app launches as a menu bar item and can be exited from `Quit SpaceRabbit`.
+
+### Crash monitoring in local builds
+
+Debug builds do not contain a Sentry DSN and start without crash monitoring. To
+exercise Sentry locally, provide the public DSN only for the launched process:
+
+```sh
+SENTRY_DSN="https://PUBLIC_KEY@HOST/PROJECT_ID" make run
+```
+
+Sentry is initialized before AppKit starts. It captures native crashes and
+uncaught Objective-C exceptions only; sessions, handled errors, app hangs,
+breadcrumbs, client reports, tracing, profiling, logs, screenshots, replay,
+MetricKit, and default PII are disabled.
 
 On first launch the app creates
 `~/Library/Application Support/SpaceRabbit/settings.json` if it does not already
@@ -132,6 +149,8 @@ only job that builds, signs, notarizes, and creates appcasts:
 - `APPLE_ID`: Apple ID used for notarization
 - `APPLE_APP_SPECIFIC_PASSWORD`: app-specific password for that Apple ID
 - `SPARKLE_ED_PRIVATE_KEY`: the exported Sparkle private seed
+- `SENTRY_AUTH_TOKEN`: Sentry organization token with `org:ci` access, used only
+  by `sentry-cli` to upload release dSYMs
 
 Set these variables separately on both `beta` and `production` environments,
 using the outputs from that environment's CDK stack:
@@ -141,6 +160,8 @@ using the outputs from that environment's CDK stack:
 - Variable `AWS_RELEASE_BUCKET`: CDK output `ArtifactBucketName`.
 - Variable `AWS_CLOUDFRONT_DISTRIBUTION_ID`: CDK output `DistributionId`.
 - Variable `AWS_RELEASE_REGION`: `us-east-1`.
+- Variable `SENTRY_DSN`: the public DSN for the `animaslabs/spacerabbit` Sentry
+  project. Only `beta` needs it because production promotes the same app bytes.
 
 The production environment does not need the certificate, Apple credentials,
 or Sparkle private key. The separately dispatched **Promote release** workflow
@@ -160,6 +181,8 @@ export CODE_SIGN_IDENTITY="Developer ID Application"
 export RELEASE_VERSION=0.1.0
 export RELEASE_BUILD_VERSION=0.1.0fc1
 export SPARKLE_PUBLIC_ED_KEY="YOUR_PUBLIC_KEY"
+export SENTRY_DSN="YOUR_PUBLIC_SENTRY_DSN"
+export SENTRY_AUTH_TOKEN="YOUR_SENTRY_ORG_TOKEN"
 export APPLE_API_KEY_PATH=/absolute/path/to/AuthKey_XXXXXX.p8
 export APPLE_API_KEY_ID=XXXXXX
 export APPLE_API_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

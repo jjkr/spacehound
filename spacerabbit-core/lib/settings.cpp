@@ -321,12 +321,6 @@ auto parse_document(const json &root, const std::filesystem::path &path)
       !status) {
     return std::unexpected(status.error());
   }
-  if (auto status =
-          parse_optional_bool(root, "telemetryEnabled", true, result.telemetry_enabled, path);
-      !status) {
-    return std::unexpected(status.error());
-  }
-
   return result;
 }
 

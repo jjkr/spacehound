@@ -73,7 +73,6 @@ auto make_default_settings_dictionary() -> NSDictionary<NSString *, id> * {
     @"trayScrollInverted" : @NO,
     @"hotkeys" : @{},
     @"fastSwipe" : @YES,
-    @"telemetryEnabled" : @YES,
   };
 }
 
@@ -231,7 +230,6 @@ auto normalized_modifiers(NSString *value, NSError **error) -> NSArray<NSString 
   document.trayScroll = parsed.tray_scroll;
   document.trayScrollInverted = parsed.tray_scroll_inverted;
   document.fastSwipe = parsed.fast_swipe;
-  document.telemetryEnabled = parsed.telemetry_enabled;
 
   NSMutableArray<SRHotkeyItem *> *hotkeys = [NSMutableArray arrayWithCapacity:std::size(known_hotkeys)];
   for (const auto &metadata : known_hotkeys) {
@@ -330,7 +328,7 @@ auto normalized_modifiers(NSString *value, NSError **error) -> NSArray<NSString 
   root[@"trayScroll"] = @(document.trayScroll);
   root[@"trayScrollInverted"] = @(document.trayScrollInverted);
   root[@"fastSwipe"] = @(document.fastSwipe);
-  root[@"telemetryEnabled"] = @(document.telemetryEnabled);
+  [root removeObjectForKey:@"telemetryEnabled"];
   root[@"hotkeys"] = hotkeys;
 
   NSData *settingsData = [NSJSONSerialization dataWithJSONObject:root

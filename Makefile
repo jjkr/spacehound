@@ -5,6 +5,7 @@ PROJECT_SPEC := project.yml
 SCHEME := SpaceRabbit
 CONFIGURATION ?= Debug
 DERIVED_DATA_PATH ?= build/DerivedData
+SENTRY_DSN ?=
 APP_NAME := SpaceRabbit.app
 APP_PATH := $(DERIVED_DATA_PATH)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
 
@@ -29,6 +30,7 @@ help:
 	@echo "Overrides:"
 	@echo "  CONFIGURATION=Debug|Release"
 	@echo "  DERIVED_DATA_PATH=build/DerivedData"
+	@echo "  SENTRY_DSN=public DSN for opt-in local crash reporting"
 
 generate:
 	xcodegen generate
@@ -39,6 +41,7 @@ build: generate
 		-scheme $(SCHEME) \
 		-configuration $(CONFIGURATION) \
 		-derivedDataPath $(DERIVED_DATA_PATH) \
+		SENTRY_DSN="$(SENTRY_DSN)" \
 		CODE_SIGNING_ALLOWED=NO \
 		build
 

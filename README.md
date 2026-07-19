@@ -72,6 +72,14 @@ Every update is Developer ID signed, notarized by Apple, and independently
 signed with SpaceRabbit's Sparkle Ed25519 key. If the feed, archive, or signature
 cannot be verified, the installed app is left unchanged.
 
+## Crash reporting
+
+Distributed builds automatically send crash reports to Sentry so failures can
+be diagnosed. Reports contain the crash signal or exception, native stack
+trace, SpaceRabbit version/build, and basic macOS/device diagnostics. SpaceRabbit
+does not send its settings file, user identity, screenshots, logs, analytics,
+performance traces, or network activity to Sentry.
+
 ## Keyboard shortcuts
 
 Every shortcut below is a default and can be changed or turned off in Settings.

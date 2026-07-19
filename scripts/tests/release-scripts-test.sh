@@ -7,6 +7,8 @@ validator="${root_dir}/scripts/validate-release-version.sh"
 availability_checker="${root_dir}/scripts/check-release-availability.sh"
 notes_preparer="${root_dir}/scripts/prepare-release-notes.sh"
 key_pair_validator="${root_dir}/scripts/validate-sparkle-key-pair.swift"
+package_script="${root_dir}/scripts/package-release.sh"
+symbol_uploader="${root_dir}/scripts/upload-sentry-symbols.sh"
 candidate_workflow="${root_dir}/.github/workflows/release.yml"
 promotion_workflow="${root_dir}/.github/workflows/promote-release.yml"
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/spacerabbit-release-tests.XXXXXX")
@@ -35,6 +37,20 @@ expect_failure "${validator}" 1.2.3 1.2.3fc0
 expect_failure "${validator}" 1.2.3 1.2.3fc256
 expect_failure "${validator}" 1.2.3 1.2.3fc01
 
+if missing_token_output=$(env DEVELOPMENT_TEAM=test-team SENTRY_DSN=test-dsn \
+  "${package_script}" 2>&1); then
+  echo "error: expected package script to reject a missing Sentry auth token" >&2
+  exit 1
+fi
+grep -q 'SENTRY_AUTH_TOKEN must be set' <<< "${missing_token_output}"
+
+if missing_dsn_output=$(env DEVELOPMENT_TEAM=test-team SENTRY_AUTH_TOKEN=test-token \
+  "${package_script}" 2>&1); then
+  echo "error: expected package script to reject a missing Sentry DSN" >&2
+  exit 1
+fi
+grep -q 'SENTRY_DSN must be set' <<< "${missing_dsn_output}"
+
 mkdir -p "${test_dir}/bin"
 cat > "${test_dir}/bin/gh" <<'EOF'
 #!/bin/zsh
@@ -44,6 +60,13 @@ case "${MOCK_GH_RESULT:-available}" in
 esac
 EOF
 chmod +x "${test_dir}/bin/gh"
+
+cat > "${test_dir}/bin/sentry-cli" <<'EOF'
+#!/bin/zsh
+print -rl -- "$@" > "${MOCK_SENTRY_ARGS_PATH}"
+[[ "${MOCK_SENTRY_RESULT:-success}" == success ]]
+EOF
+chmod +x "${test_dir}/bin/sentry-cli"
 
 checker_path="${test_dir}/bin:${PATH}"
 [[ "$(env PATH="${checker_path}" MOCK_GH_RESULT=available \
@@ -56,6 +79,34 @@ expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=error \
   "${availability_checker}" animaslabs/spacerabbit 1.2.3
 expect_failure "${availability_checker}" invalid-repository 1.2.3
 expect_failure "${availability_checker}" animaslabs/spacerabbit 1.2
+
+mkdir -p "${test_dir}/dsyms/SpaceRabbit.app.dSYM"
+mkdir -p "${test_dir}/empty-dsyms"
+expect_failure env PATH="/usr/bin:/bin" \
+  "${symbol_uploader}" "${test_dir}/dsyms"
+expect_failure env PATH="/usr/bin:/bin" SENTRY_AUTH_TOKEN=test-token \
+  "${symbol_uploader}" "${test_dir}/dsyms"
+expect_failure env PATH="${checker_path}" SENTRY_AUTH_TOKEN=test-token \
+  MOCK_SENTRY_ARGS_PATH="${test_dir}/unused-args" \
+  "${symbol_uploader}" "${test_dir}/missing-dsyms"
+expect_failure env PATH="${checker_path}" SENTRY_AUTH_TOKEN=test-token \
+  MOCK_SENTRY_ARGS_PATH="${test_dir}/unused-args" \
+  "${symbol_uploader}" "${test_dir}/empty-dsyms"
+expect_failure env PATH="${checker_path}" SENTRY_AUTH_TOKEN=test-token \
+  MOCK_SENTRY_RESULT=fail MOCK_SENTRY_ARGS_PATH="${test_dir}/failed-args" \
+  "${symbol_uploader}" "${test_dir}/dsyms"
+env PATH="${checker_path}" SENTRY_AUTH_TOKEN=test-token \
+  MOCK_SENTRY_ARGS_PATH="${test_dir}/sentry-args" \
+  "${symbol_uploader}" "${test_dir}/dsyms" >/dev/null
+diff -u - "${test_dir}/sentry-args" <<EOF
+debug-files
+upload
+--org
+animaslabs
+--project
+spacerabbit
+${test_dir}/dsyms
+EOF
 
 cat > "${test_dir}/notes.md" <<'EOF'
 ## Highlights
@@ -83,6 +134,9 @@ fi
 grep -q 'group: spacerabbit-release' "${candidate_workflow}"
 grep -q 'Candidate run ID:.*GITHUB_RUN_ID' "${candidate_workflow}"
 grep -q 'release-notes/v${RELEASE_VERSION}.md' "${candidate_workflow}"
+grep -q 'SENTRY_DSN:.*vars.SENTRY_DSN' "${candidate_workflow}"
+grep -q 'SENTRY_AUTH_TOKEN:.*secrets.SENTRY_AUTH_TOKEN' "${candidate_workflow}"
+grep -q 'xcodegen cmake ninja sentry-cli' "${candidate_workflow}"
 if grep -q 'generate-notes' "${candidate_workflow}"; then
   echo "error: candidate workflow must use authored release notes" >&2
   exit 1

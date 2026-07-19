@@ -49,6 +49,8 @@ function setup_notary_args() {
 }
 
 require_env DEVELOPMENT_TEAM
+require_env SENTRY_AUTH_TOKEN
+require_env SENTRY_DSN
 require_env SPARKLE_PUBLIC_ED_KEY
 
 if ! SPARKLE_PUBLIC_KEY_BYTES=$(print -rn -- "${SPARKLE_PUBLIC_ED_KEY}" | base64 --decode 2>/dev/null | wc -c | tr -d ' '); then
@@ -61,6 +63,10 @@ fi
 
 if ! command -v xcodegen >/dev/null 2>&1; then
   echo "error: xcodegen is required for release packaging" >&2
+  exit 1
+fi
+if ! command -v sentry-cli >/dev/null 2>&1; then
+  echo "error: sentry-cli is required for release packaging" >&2
   exit 1
 fi
 
@@ -135,7 +141,10 @@ xcodebuild \
   SPARKLE_FEED_URL="${SPARKLE_FEED_URL}" \
   SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL}" \
   SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY}" \
+  SENTRY_DSN="${SENTRY_DSN}" \
   archive
+
+"${ROOT_DIR}/scripts/upload-sentry-symbols.sh" "${ARCHIVE_PATH}/dSYMs"
 
 xcodebuild \
   -exportArchive \
@@ -154,6 +163,7 @@ BUILT_BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${AP
 BUILT_FEED_URL=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "${APP_PATH}/Contents/Info.plist")
 BUILT_BETA_FEED_URL=$(/usr/libexec/PlistBuddy -c "Print :SUBetaFeedURL" "${APP_PATH}/Contents/Info.plist")
 BUILT_PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "${APP_PATH}/Contents/Info.plist")
+BUILT_SENTRY_DSN=$(/usr/libexec/PlistBuddy -c "Print :SentryDSN" "${APP_PATH}/Contents/Info.plist")
 
 if [[ "${BUILT_MARKETING_VERSION}" != "${RELEASE_VERSION}" ||
       "${BUILT_BUNDLE_VERSION}" != "${RELEASE_BUILD_VERSION}" ]]; then
@@ -163,8 +173,9 @@ fi
 
 if [[ "${BUILT_FEED_URL}" != "${SPARKLE_FEED_URL}" ||
       "${BUILT_BETA_FEED_URL}" != "${SPARKLE_BETA_FEED_URL}" ||
-      "${BUILT_PUBLIC_KEY}" != "${SPARKLE_PUBLIC_ED_KEY}" ]]; then
-  echo "error: exported app does not contain the requested Sparkle configuration" >&2
+      "${BUILT_PUBLIC_KEY}" != "${SPARKLE_PUBLIC_ED_KEY}" ||
+      "${BUILT_SENTRY_DSN}" != "${SENTRY_DSN}" ]]; then
+  echo "error: exported app does not contain the requested Sparkle and Sentry configuration" >&2
   exit 1
 fi
 

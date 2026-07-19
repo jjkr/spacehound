@@ -36,6 +36,7 @@ jobs:
       SPARKLE_FEED_URL: https://updates.getspacerabbit.com/appcast.xml
       SPARKLE_BETA_FEED_URL: https://beta-updates.getspacerabbit.com/appcast.xml
       SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+      SENTRY_DSN: ${{ vars.SENTRY_DSN }}
       AWS_REGION: ${{ vars.AWS_RELEASE_REGION }}
       AWS_RELEASE_BUCKET: ${{ vars.AWS_RELEASE_BUCKET }}
       AWS_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
@@ -53,6 +54,7 @@ jobs:
 
       - name: Validate candidate configuration
         env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           set -euo pipefail
@@ -75,6 +77,8 @@ jobs:
             APPLE_APP_SPECIFIC_PASSWORD
             SPARKLE_ED_PRIVATE_KEY
             SPARKLE_PUBLIC_ED_KEY
+            SENTRY_AUTH_TOKEN
+            SENTRY_DSN
           )
           for name in "${required_vars[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -127,7 +131,7 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
           set -euo pipefail
-          for tool in xcodegen cmake ninja; do
+          for tool in xcodegen cmake ninja sentry-cli; do
             if ! command -v "${tool}" >/dev/null 2>&1; then
               brew install "${tool}"
             fi
@@ -149,6 +153,8 @@ jobs:
           security default-keychain -d user -s "${KEYCHAIN_PATH}"
 
       - name: Build, sign, and notarize candidate once
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: ./scripts/package-release.sh
 
       - name: Prepare authored release notes

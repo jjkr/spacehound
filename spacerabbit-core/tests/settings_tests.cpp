@@ -76,7 +76,7 @@ void write_file(const fs::path &path, std::string_view contents) {
   ASSERT_TRUE(output.good());
 }
 
-TEST(settings_tests, loads_canonical_settings_document) {
+TEST(settings_tests, loads_document_with_legacy_telemetry_field) {
   const auto temp_dir = make_temp_dir();
   const auto path = temp_dir / "settings.json";
   write_file(
@@ -104,7 +104,6 @@ TEST(settings_tests, loads_canonical_settings_document) {
   EXPECT_FALSE(loaded->tray_scroll);
   EXPECT_TRUE(loaded->tray_scroll_inverted);
   EXPECT_FALSE(loaded->fast_swipe);
-  EXPECT_FALSE(loaded->telemetry_enabled);
   ASSERT_TRUE(loaded->hotkeys.contains("switch_space_left"));
   ASSERT_TRUE(loaded->hotkeys.at("switch_space_left").has_value());
   EXPECT_EQ(loaded->hotkeys.at("switch_space_left")->key, "h");
@@ -187,7 +186,6 @@ TEST(settings_tests, missing_optional_booleans_use_compatibility_defaults) {
   EXPECT_TRUE(loaded->tray_scroll);
   EXPECT_FALSE(loaded->tray_scroll_inverted);
   EXPECT_TRUE(loaded->fast_swipe);
-  EXPECT_TRUE(loaded->telemetry_enabled);
 }
 
 TEST(settings_tests, missing_known_hotkeys_are_backfilled_from_defaults) {

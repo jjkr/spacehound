@@ -29,7 +29,6 @@ struct document final {
   bool tray_scroll_inverted = false;
   hotkey_map hotkeys;
   bool fast_swipe = true;
-  bool telemetry_enabled = true;
 
   [[nodiscard]] auto operator==(const document &) const -> bool = default;
 };
