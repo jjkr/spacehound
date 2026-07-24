@@ -6,7 +6,7 @@
 
 namespace {
 
-NSString *const SHSettingsStoreErrorDomain = @"com.animaslabs.SpaceHound.Settings";
+NSString *const SHSettingsStoreErrorDomain = @"com.jjkr.spacehound.Settings";
 
 enum settings_store_error_code : NSInteger {
   settings_store_error_invalid_root = 1,

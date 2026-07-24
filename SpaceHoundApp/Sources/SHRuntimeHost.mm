@@ -172,7 +172,7 @@ static void SHRuntimeHostActiveSpaceChanged(
 }
 
 - (NSError *)runtimeNSErrorForError:(const spacehound::daemon::error &)error {
-  return [NSError errorWithDomain:@"com.animaslabs.SpaceHound.Runtime"
+  return [NSError errorWithDomain:@"com.jjkr.spacehound.Runtime"
                              code:static_cast<NSInteger>(error.code)
                          userInfo:@{NSLocalizedDescriptionKey : [self statusTextForError:error]}];
 }

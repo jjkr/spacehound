@@ -26,7 +26,7 @@ static NSString *_Nullable SHSentryDSN(void) {
 
 static NSString *SHSentryReleaseName(NSBundle *bundle) {
   NSString *bundleIdentifier =
-      SHNonEmptyString(bundle.bundleIdentifier) ?: @"com.animaslabs.SpaceHound";
+      SHNonEmptyString(bundle.bundleIdentifier) ?: @"com.jjkr.spacehound";
   NSString *marketingVersion =
       SHNonEmptyString([bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]) ?: @"0.0.0";
   NSString *buildVersion =

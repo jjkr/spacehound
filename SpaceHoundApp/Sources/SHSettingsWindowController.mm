@@ -1046,7 +1046,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                  (long)loginItemError.code);
     self.statusLabel.stringValue = @"Settings saved, but launch at login could not be updated.";
     [self presentSettingsError:loginItemError ?:
-        [NSError errorWithDomain:@"com.animaslabs.SpaceHound.LoginItem"
+        [NSError errorWithDomain:@"com.jjkr.spacehound.LoginItem"
                             code:1
                         userInfo:@{
                           NSLocalizedDescriptionKey :

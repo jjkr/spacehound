@@ -1,6 +1,6 @@
 #import "SHLogging.h"
 
-static const char *const SHLoggingSubsystem = "com.animaslabs.SpaceHound";
+static const char *const SHLoggingSubsystem = "com.jjkr.spacehound";
 
 #define SH_DEFINE_LOG_CATEGORY(functionName, categoryName) \
   os_log_t functionName(void) {                            \

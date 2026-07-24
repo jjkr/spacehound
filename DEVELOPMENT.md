@@ -73,7 +73,7 @@ The app launches as a menu bar item and can be exited from `Quit SpaceHound`.
 ### Local unified logs
 
 SpaceHound writes structured diagnostics to Apple's unified logging system
-under subsystem `com.animaslabs.SpaceHound`. Logs are categorized as
+under subsystem `com.jjkr.spacehound`. Logs are categorized as
 `lifecycle`, `permissions`, `navigation`, `settings`, `updates`, and
 `login-item`. The app and C++ runtime share this subsystem and category set.
 The entries stay on the Mac and are not forwarded to Sentry.
@@ -82,14 +82,14 @@ Stream logs while exercising a development build:
 
 ```sh
 /usr/bin/log stream --style compact --level debug \
-  --predicate 'subsystem == "com.animaslabs.SpaceHound"'
+  --predicate 'subsystem == "com.jjkr.spacehound"'
 ```
 
 Inspect recent persisted entries:
 
 ```sh
 /usr/bin/log show --last 15m --info --debug --style compact \
-  --predicate 'subsystem == "com.animaslabs.SpaceHound"'
+  --predicate 'subsystem == "com.jjkr.spacehound"'
 ```
 
 Dynamic values are private by default. Logs intentionally exclude settings
@@ -172,6 +172,11 @@ If `0.1.0` was already published by the old workflow, start this candidate flow
 at `0.1.1fc1`, not `0.1.0fc1`.
 
 ### Release secrets
+
+The personal Apple Developer team must own the explicit macOS App ID
+`com.jjkr.spacehound`. Export that team's **Developer ID Application**
+certificate together with its private key as a password-protected `.p12`; the
+release workflow rejects promoted artifacts with any other bundle identifier.
 
 Set these secrets on the `beta` GitHub environment, because the beta job is the
 only job that builds, signs, notarizes, and creates appcasts:

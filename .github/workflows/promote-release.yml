@@ -135,6 +135,7 @@ jobs:
           xcrun stapler validate "${dmg}"
 
           info="${app}/Contents/Info.plist"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${info}")" == 'com.jjkr.spacehound' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info}")" == "${RELEASE_VERSION}" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info}")" == "${RELEASE_BUILD_VERSION}" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "${info}")" == 'https://updates.getspacehound.com/appcast.xml' ]]

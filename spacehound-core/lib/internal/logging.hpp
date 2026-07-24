@@ -4,7 +4,7 @@
 
 namespace spacehound::diagnostics {
 
-inline constexpr auto subsystem = "com.animaslabs.SpaceHound";
+inline constexpr auto subsystem = "com.jjkr.spacehound";
 
 inline auto lifecycle_log() noexcept -> os_log_t {
   static os_log_t log = os_log_create(subsystem, "lifecycle");

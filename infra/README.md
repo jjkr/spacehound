@@ -160,8 +160,8 @@ xcodebuild -resolvePackageDependencies \
   -derivedDataPath build/DerivedData
 
 sparkle_bin=build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin
-"${sparkle_bin}/generate_keys" --account com.animaslabs.SpaceHound
-"${sparkle_bin}/generate_keys" --account com.animaslabs.SpaceHound \
+"${sparkle_bin}/generate_keys" --account com.jjkr.spacehound
+"${sparkle_bin}/generate_keys" --account com.jjkr.spacehound \
   -x /secure/offline/location/spacehound-sparkle-private-key
 ```
 
