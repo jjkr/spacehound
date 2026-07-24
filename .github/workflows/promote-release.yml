@@ -138,15 +138,15 @@ jobs:
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${info}")" == 'com.jjkr.spacehound' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info}")" == "${RELEASE_VERSION}" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info}")" == "${RELEASE_BUILD_VERSION}" ]]
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "${info}")" == 'https://updates.getspacehound.com/appcast.xml' ]]
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUBetaFeedURL' "${info}")" == 'https://beta-updates.getspacehound.com/appcast.xml' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "${info}")" == 'https://updates.spacehound.app/appcast.xml' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUBetaFeedURL' "${info}")" == 'https://beta-updates.spacehound.app/appcast.xml' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "${info}")" == "${SPARKLE_PUBLIC_ED_KEY}" ]]
 
           appcast=build/dist/production-appcast.xml
           xmllint --noout "${appcast}"
           [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="version"])' "${appcast}")" == "${RELEASE_BUILD_VERSION}" ]]
           [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="shortVersionString"])' "${appcast}")" == "${RELEASE_VERSION}" ]]
-          expected_archive_url="https://updates.getspacehound.com/releases/v${RELEASE_VERSION}/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          expected_archive_url="https://updates.spacehound.app/releases/v${RELEASE_VERSION}/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
           [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@url)' "${appcast}")" == "${expected_archive_url}" ]]
           [[ -n "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@*[local-name()="edSignature"])' "${appcast}")" ]]
           grep -q '<!-- sparkle-signatures:' "${appcast}"

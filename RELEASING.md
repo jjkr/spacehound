@@ -135,10 +135,10 @@ Save the numeric candidate run ID. A successful run publishes:
 
 Do not promote until the beta candidate has been approved. At minimum:
 
-- Confirm `https://beta-updates.getspacehound.com/appcast.xml` names the
+- Confirm `https://beta-updates.spacehound.app/appcast.xml` names the
   expected `X.Y.ZfcN` bundle version.
 - Confirm the latest beta DMG is reachable at
-  `https://beta-updates.getspacehound.com/releases/latest/SpaceHound-arm64.dmg`.
+  `https://beta-updates.spacehound.app/releases/latest/SpaceHound-arm64.dmg`.
 - In an installed copy of SpaceHound, enable **Receive Beta Updates**, choose
   **Check for Updates…**, and install the candidate.
 - Confirm the update signature is accepted, installation completes, the app
@@ -153,9 +153,9 @@ Basic endpoint checks can be run with:
 
 ```sh
 curl --fail --show-error \
-  https://beta-updates.getspacehound.com/appcast.xml
+  https://beta-updates.spacehound.app/appcast.xml
 curl --fail --show-error --head \
-  https://beta-updates.getspacehound.com/releases/latest/SpaceHound-arm64.dmg
+  https://beta-updates.spacehound.app/releases/latest/SpaceHound-arm64.dmg
 ```
 
 ## 4. Promote the approved candidate
@@ -205,9 +205,9 @@ Confirm the production endpoints and GitHub Release:
 
 ```sh
 curl --fail --show-error \
-  https://updates.getspacehound.com/appcast.xml
+  https://updates.spacehound.app/appcast.xml
 curl --fail --show-error --head \
-  https://updates.getspacehound.com/releases/latest/SpaceHound-arm64.dmg
+  https://updates.spacehound.app/releases/latest/SpaceHound-arm64.dmg
 gh release view v0.3.0 --repo jjkr/spacehound
 ```
 

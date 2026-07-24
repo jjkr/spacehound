@@ -3,19 +3,19 @@
   "context": {
     "betaAccount": "499246566000",
     "betaBandwidthAlarmGibPerHour": 1,
-    "betaDomainName": "beta-updates.getspacehound.com",
+    "betaDomainName": "beta-updates.spacehound.app",
     "betaGitHubEnvironment": "beta",
     "betaGitHubOidcProviderArn": "",
     "githubBranch": "main",
     "githubConnectionArn": "arn:aws:codeconnections:us-east-1:155091848123:connection/08dff3e7-5804-4584-a65d-254fa51e805a",
     "githubRepository": "jjkr/spacehound",
     "infraAccount": "155091848123",
-    "parentHostedZoneId": "Z022719419UF0M8DE169",
+    "parentHostedZoneId": "",
     "prodAccount": "772699011759",
     "prodBandwidthAlarmGibPerHour": 10,
-    "prodDomainName": "updates.getspacehound.com",
+    "prodDomainName": "updates.spacehound.app",
     "prodGitHubEnvironment": "production",
     "prodGitHubOidcProviderArn": "",
-    "rootDomainName": "getspacehound.com"
+    "rootDomainName": "spacehound.app"
   }
 }

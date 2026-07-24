@@ -126,8 +126,8 @@ For the step-by-step release procedure, use the canonical
 [release runbook](RELEASING.md). This section documents the underlying packaging
 and distribution design.
 
-Production updates are hosted at `https://updates.getspacehound.com`; beta
-updates use `https://beta-updates.getspacehound.com`. Each environment has its
+Production updates are hosted at `https://updates.spacehound.app`; beta
+updates use `https://beta-updates.spacehound.app`. Each environment has its
 own private S3 bucket, CloudFront distribution, certificate, hosted zone, and
 GitHub publisher role. GitHub Releases contains the production mirror. The repo
 includes:

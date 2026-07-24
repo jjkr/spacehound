@@ -73,8 +73,8 @@ fi
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
 RELEASE_BUILD_VERSION="${RELEASE_BUILD_VERSION:-}"
-SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://updates.getspacehound.com/appcast.xml}"
-SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL:-https://beta-updates.getspacehound.com/appcast.xml}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://updates.spacehound.app/appcast.xml}"
+SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL:-https://beta-updates.spacehound.app/appcast.xml}"
 
 if [[ -n "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="${RELEASE_VERSION#refs/tags/}"

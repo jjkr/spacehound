@@ -5,9 +5,9 @@ and deploys independent update-delivery stacks to beta and production:
 
 | Purpose | Account | Domain |
 | --- | --- | --- |
-| Pipeline and root DNS | `spacehound-infra` (`155091848123`) | `getspacehound.com` |
-| Beta updates | `spacehound-beta` (`499246566000`) | `beta-updates.getspacehound.com` |
-| Production updates | `spacehound-prod` (`772699011759`) | `updates.getspacehound.com` |
+| Pipeline and root DNS | `spacehound-infra` (`155091848123`) | `spacehound.app` |
+| Beta updates | `spacehound-beta` (`499246566000`) | `beta-updates.spacehound.app` |
+| Production updates | `spacehound-prod` (`772699011759`) | `updates.spacehound.app` |
 
 The pipeline automatically deploys beta, verifies its endpoint, then waits for
 manual approval before deploying production. It only triggers for changes to
@@ -16,10 +16,12 @@ unrelated and is not changed by these stacks.
 
 ## Root DNS and GitHub connection
 
-1. In the infra account, create a public Route 53 hosted zone for
-   `getspacehound.com`.
-2. At the registrar, replace the domain's authoritative name servers with the
-   four values from that hosted zone. Record its hosted-zone ID.
+1. In the infra account, use the authoritative public Route 53 hosted zone for
+   `spacehound.app`, or create one and copy every existing website DNS record
+   into it before changing the domain's name servers. Record its hosted-zone ID.
+2. If a new hosted zone was created, replace the domain's authoritative name
+   servers at the registrar only after verifying that it contains the existing
+   website records.
 3. In **Developer Tools > Connections** in `us-east-1`, create a GitHub
    connection for `jjkr/spacehound` and complete the pending GitHub
    authorization. Record the connection ARN.
@@ -173,10 +175,10 @@ an encrypted offline backup, then remove every unencrypted temporary copy.
 ## Candidate promotion
 
 Dispatch **Release candidate** to build `X.Y.ZfcN` once and publish it at
-`https://beta-updates.getspacehound.com`. Enable **Receive Beta Updates** from
+`https://beta-updates.spacehound.app`. Enable **Receive Beta Updates** from
 the app's menu to test it. After testing, `jjkr` dispatches **Promote release**
 with the successful candidate run ID and matching version inputs. Promotion
 downloads that run's retained artifact, verifies its checksums, Developer ID
 signature, notarization ticket, bundle metadata, candidate commit, and
 pre-generated signed appcast, then publishes it to
-`https://updates.getspacehound.com` without invoking Xcode.
+`https://updates.spacehound.app` without invoking Xcode.

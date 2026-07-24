@@ -10,8 +10,8 @@ settings:
     CURRENT_PROJECT_VERSION: 0.3.0fc1
     MARKETING_VERSION: 0.3.0
     CLANG_ENABLE_OBJC_ARC: YES
-    SPARKLE_FEED_URL: https://updates.getspacehound.com/appcast.xml
-    SPARKLE_BETA_FEED_URL: https://beta-updates.getspacehound.com/appcast.xml
+    SPARKLE_FEED_URL: https://updates.spacehound.app/appcast.xml
+    SPARKLE_BETA_FEED_URL: https://beta-updates.spacehound.app/appcast.xml
     SPARKLE_PUBLIC_ED_KEY: ""
     SENTRY_DSN: ""
 

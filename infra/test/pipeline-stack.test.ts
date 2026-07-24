@@ -10,7 +10,7 @@ describe("SpaceHound infrastructure pipeline", () => {
       beta: {
         account: "499246566000",
         bandwidthAlarmGibPerHour: 1,
-        domainName: "beta-updates.getspacehound.com",
+        domainName: "beta-updates.spacehound.app",
         githubEnvironment: "beta",
         githubOidcProviderArn:
           "arn:aws:iam::499246566000:oidc-provider/token.actions.githubusercontent.com",
@@ -25,14 +25,14 @@ describe("SpaceHound infrastructure pipeline", () => {
       production: {
         account: "772699011759",
         bandwidthAlarmGibPerHour: 10,
-        domainName: "updates.getspacehound.com",
+        domainName: "updates.spacehound.app",
         githubEnvironment: "production",
         githubOidcProviderArn:
           "arn:aws:iam::772699011759:oidc-provider/token.actions.githubusercontent.com",
         name: "production",
       },
       region: "us-east-1",
-      rootDomainName: "getspacehound.com",
+      rootDomainName: "spacehound.app",
     },
     env: { account: "155091848123", region: "us-east-1" },
   });

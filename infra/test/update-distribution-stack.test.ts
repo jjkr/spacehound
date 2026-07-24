@@ -9,8 +9,8 @@ function template(
 ): Template {
   const app = new App();
   const domainName = environmentName === "beta"
-    ? "beta-updates.getspacehound.com"
-    : "updates.getspacehound.com";
+    ? "beta-updates.spacehound.app"
+    : "updates.spacehound.app";
   const stack = new UpdateDistributionStack(app, "TestStack", {
     bandwidthAlarmGibPerHour: environmentName === "beta" ? 1 : 10,
     delegationRoleArn: "arn:aws:iam::155091848123:role/SpaceHoundDnsDelegationRole",
@@ -46,7 +46,7 @@ describe("SpaceHound update distribution", () => {
   it("serves one environment through an independent domain and bucket", () => {
     template("beta").hasResourceProperties("AWS::CloudFront::Distribution", {
       DistributionConfig: Match.objectLike({
-        Aliases: ["beta-updates.getspacehound.com"],
+        Aliases: ["beta-updates.spacehound.app"],
         CacheBehaviors: Match.arrayWith([
           Match.objectLike({ PathPattern: "appcast.xml" }),
           Match.objectLike({ PathPattern: "releases/latest/*" }),
@@ -72,7 +72,7 @@ describe("SpaceHound update distribution", () => {
       Name: "sh-beta-updates",
       RunConfig: Match.objectLike({
         EnvironmentVariables: {
-          BASE_URL: "https://beta-updates.getspacehound.com",
+          BASE_URL: "https://beta-updates.spacehound.app",
         },
       }),
       RuntimeVersion: "syn-nodejs-puppeteer-12.0",
@@ -151,7 +151,7 @@ describe("SpaceHound update distribution", () => {
     });
     template().hasResourceProperties("Custom::CrossAccountZoneDelegation", {
       AssumeRoleArn: "arn:aws:iam::155091848123:role/SpaceHoundDnsDelegationRole",
-      DelegatedZoneName: "updates.getspacehound.com",
+      DelegatedZoneName: "updates.spacehound.app",
       ParentZoneId: "Z0123456789EXAMPLE",
     });
   });
