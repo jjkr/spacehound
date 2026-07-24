@@ -30,19 +30,19 @@ fi
 
 candidate_number="${bundle_version##*fc}"
 artifact_version="${bundle_version/fc/-fc}"
-notes_name="SpaceRabbit-${artifact_version}-arm64.md"
+notes_name="SpaceHound-${artifact_version}-arm64.md"
 
 mkdir -p "${output_dir}/beta" "${output_dir}/production"
 
 {
-  printf '# SpaceRabbit %s (final candidate %s)\n\n' \
+  printf '# SpaceHound %s (final candidate %s)\n\n' \
     "${marketing_version}" "${candidate_number}"
   cat "${source_path}"
   printf '\n'
 } > "${output_dir}/beta/${notes_name}"
 
 {
-  printf '# SpaceRabbit %s\n\n' "${marketing_version}"
+  printf '# SpaceHound %s\n\n' "${marketing_version}"
   cat "${source_path}"
   printf '\n'
 } > "${output_dir}/production/${notes_name}"

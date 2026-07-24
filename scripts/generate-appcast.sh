@@ -55,14 +55,14 @@ print -rn -- "${SPARKLE_ED_PRIVATE_KEY}" | xcrun swift \
   "${0:A:h}/validate-sparkle-key-pair.swift" \
   "${SPARKLE_PUBLIC_ED_KEY}"
 
-work_dir=$(mktemp -d "${TMPDIR:-/tmp}/spacerabbit-appcast.XXXXXX")
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/spacehound-appcast.XXXXXX")
 function cleanup() {
   rm -rf "${work_dir}"
 }
 trap cleanup EXIT
 
-archive_name="SpaceRabbit-${artifact_version}-arm64.zip"
-notes_name="SpaceRabbit-${artifact_version}-arm64.md"
+archive_name="SpaceHound-${artifact_version}-arm64.zip"
+notes_name="SpaceHound-${artifact_version}-arm64.md"
 cp "${UPDATE_ARCHIVE_PATH}" "${work_dir}/${archive_name}"
 cp "${RELEASE_NOTES_PATH}" "${work_dir}/${notes_name}"
 
@@ -70,7 +70,7 @@ print -rn -- "${SPARKLE_ED_PRIVATE_KEY}" | "${SPARKLE_GENERATE_APPCAST}" \
   --ed-key-file - \
   --download-url-prefix "${DOWNLOAD_URL_PREFIX%/}/" \
   --release-notes-url-prefix "${RELEASE_NOTES_URL_PREFIX%/}/" \
-  --link "https://github.com/animaslabs/spacerabbit" \
+  --link "https://github.com/jjkr/spacehound" \
   --versions "${bundle_version}" \
   --maximum-versions 1 \
   --maximum-deltas 0 \

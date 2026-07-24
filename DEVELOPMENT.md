@@ -1,17 +1,17 @@
 # Development
 
-This document covers building SpaceRabbit from source, its architecture, and how
+This document covers building SpaceHound from source, its architecture, and how
 releases are packaged. For end-user documentation, see the [README](README.md).
 
 ## Architecture
 
-SpaceRabbit is a macOS menu bar app (AppKit, Objective-C/Objective-C++) that links
-the `spacerabbit-core` runtime directly into the main app process. There is no
-separately launched `spacerabbitd` helper during normal app runs.
+SpaceHound is a macOS menu bar app (AppKit, Objective-C/Objective-C++) that links
+the `spacehound-core` runtime directly into the main app process. There is no
+separately launched `spacehoundd` helper during normal app runs.
 
-The app build uses the repo-local `spacerabbit-core/` sources directly. The app
+The app build uses the repo-local `spacehound-core/` sources directly. The app
 target compiles the core sources into the main app process, generates
-`spacerabbit/version.hpp` during the build, and uses a vendored
+`spacehound/version.hpp` during the build, and uses a vendored
 `nlohmann/json.hpp` header from this repo.
 
 The CMake project builds those sources only as an internal static target for
@@ -20,23 +20,23 @@ has no separate core binary or public C++ ABI to version.
 
 Key source files:
 
-- `SpaceRabbitApp/Sources/AppDelegate.m` — menu bar item, accessibility
+- `SpaceHoundApp/Sources/AppDelegate.m` — menu bar item, accessibility
   permission workflow, app lifecycle.
-- `SpaceRabbitApp/Sources/SRRuntimeHost.mm` — hosts the in-process
-  `spacerabbit-core` runtime and drives the menu bar title.
-- `SpaceRabbitApp/Sources/SRSettingsWindowController.mm` — the Settings window UI
+- `SpaceHoundApp/Sources/SHRuntimeHost.mm` — hosts the in-process
+  `spacehound-core` runtime and drives the menu bar title.
+- `SpaceHoundApp/Sources/SHSettingsWindowController.mm` — the Settings window UI
   (toggles and shortcut recorders).
-- `SpaceRabbitApp/Sources/SRSettingsStore.mm` — reads/writes `settings.json` and
+- `SpaceHoundApp/Sources/SHSettingsStore.mm` — reads/writes `settings.json` and
   defines the canonical list of hotkey actions.
-- `SpaceRabbitApp/Sources/SRLoginItemManager.m` — manages launch-at-login state
+- `SpaceHoundApp/Sources/SHLoginItemManager.m` — manages launch-at-login state
   through macOS Service Management.
-- `SpaceRabbitApp/Sources/SRPermissions.m` — Accessibility access checks.
-- `SpaceRabbitApp/Sources/SRLogging.m` — local Apple unified-log categories and
+- `SpaceHoundApp/Sources/SHPermissions.m` — Accessibility access checks.
+- `SpaceHoundApp/Sources/SHLogging.m` — local Apple unified-log categories and
   subsystem definitions.
-- `spacerabbit-core/lib/internal/logging.hpp` — the matching internal logging
+- `spacehound-core/lib/internal/logging.hpp` — the matching internal logging
   definitions used by the C++ runtime.
-- `spacerabbit-core/` — the C++ runtime that performs Space/display/window
-  switching. See `spacerabbit-core/docs/` for the settings schema and API notes.
+- `spacehound-core/` — the C++ runtime that performs Space/display/window
+  switching. See `spacehound-core/docs/` for the settings schema and API notes.
 - Sparkle 2 — checks the signed appcast and safely replaces/relaunches the app.
   Updater preferences are owned by Sparkle in `NSUserDefaults`, not by the
   runtime's `settings.json` schema.
@@ -68,12 +68,12 @@ make build
 make run
 ```
 
-The app launches as a menu bar item and can be exited from `Quit SpaceRabbit`.
+The app launches as a menu bar item and can be exited from `Quit SpaceHound`.
 
 ### Local unified logs
 
-SpaceRabbit writes structured diagnostics to Apple's unified logging system
-under subsystem `com.animaslabs.SpaceRabbit`. Logs are categorized as
+SpaceHound writes structured diagnostics to Apple's unified logging system
+under subsystem `com.animaslabs.SpaceHound`. Logs are categorized as
 `lifecycle`, `permissions`, `navigation`, `settings`, `updates`, and
 `login-item`. The app and C++ runtime share this subsystem and category set.
 The entries stay on the Mac and are not forwarded to Sentry.
@@ -82,14 +82,14 @@ Stream logs while exercising a development build:
 
 ```sh
 /usr/bin/log stream --style compact --level debug \
-  --predicate 'subsystem == "com.animaslabs.SpaceRabbit"'
+  --predicate 'subsystem == "com.animaslabs.SpaceHound"'
 ```
 
 Inspect recent persisted entries:
 
 ```sh
 /usr/bin/log show --last 15m --info --debug --style compact \
-  --predicate 'subsystem == "com.animaslabs.SpaceRabbit"'
+  --predicate 'subsystem == "com.animaslabs.SpaceHound"'
 ```
 
 Dynamic values are private by default. Logs intentionally exclude settings
@@ -111,14 +111,14 @@ breadcrumbs, client reports, tracing, profiling, logs, screenshots, replay,
 MetricKit, and default PII are disabled.
 
 On first launch the app creates
-`~/Library/Application Support/SpaceRabbit/settings.json` if it does not already
-exist, then starts the SpaceRabbit runtime in-process with that settings path.
+`~/Library/Application Support/SpaceHound/settings.json` if it does not already
+exist, then starts the SpaceHound runtime in-process with that settings path.
 
 ## Settings schema
 
 The canonical `settings.json` contract shared between the app (writer) and the
 runtime (reader) is documented in
-[`spacerabbit-core/docs/settings-json-schema.md`](spacerabbit-core/docs/settings-json-schema.md).
+[`spacehound-core/docs/settings-json-schema.md`](spacehound-core/docs/settings-json-schema.md).
 
 ## Distribution
 
@@ -126,8 +126,8 @@ For the step-by-step release procedure, use the canonical
 [release runbook](RELEASING.md). This section documents the underlying packaging
 and distribution design.
 
-Production updates are hosted at `https://updates.getspacerabbit.com`; beta
-updates use `https://beta-updates.getspacerabbit.com`. Each environment has its
+Production updates are hosted at `https://updates.getspacehound.com`; beta
+updates use `https://beta-updates.getspacehound.com`. Each environment has its
 own private S3 bucket, CloudFront distribution, certificate, hosted zone, and
 GitHub publisher role. GitHub Releases contains the production mirror. The repo
 includes:
@@ -153,7 +153,7 @@ and refuses to continue unless it matches `SPARKLE_PUBLIC_ED_KEY` embedded in
 the app.
 
 The release app is packaged as a single executable bundle. There is no nested
-SpaceRabbit daemon helper to copy or sign separately. Sparkle's framework and
+SpaceHound daemon helper to copy or sign separately. Sparkle's framework and
 installer helpers are embedded and signed by Xcode.
 
 ### Version contract
@@ -194,7 +194,7 @@ using the outputs from that environment's CDK stack:
 - Variable `AWS_RELEASE_BUCKET`: CDK output `ArtifactBucketName`.
 - Variable `AWS_CLOUDFRONT_DISTRIBUTION_ID`: CDK output `DistributionId`.
 - Variable `AWS_RELEASE_REGION`: `us-east-1`.
-- Variable `SENTRY_DSN`: the public DSN for the `animaslabs/spacerabbit` Sentry
+- Variable `SENTRY_DSN`: the public DSN for the `jjkr/spacehound` Sentry
   project. Only `beta` needs it because production promotes the same app bytes.
 
 The production environment does not need the certificate, Apple credentials,

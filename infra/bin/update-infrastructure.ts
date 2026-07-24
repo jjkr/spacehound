@@ -7,8 +7,8 @@ import { PipelineStack } from "../lib/pipeline-stack.js";
 const app = new App();
 const config = deploymentConfig(app);
 
-new PipelineStack(app, "SpaceRabbitInfrastructurePipeline", {
+new PipelineStack(app, "SpaceHoundInfrastructurePipeline", {
   config,
   env: { account: config.infraAccount, region: config.region },
-  stackName: "SpaceRabbit-InfrastructurePipeline",
+  stackName: "SpaceHound-InfrastructurePipeline",
 });

@@ -3,19 +3,19 @@
   "context": {
     "betaAccount": "499246566000",
     "betaBandwidthAlarmGibPerHour": 1,
-    "betaDomainName": "beta-updates.getspacerabbit.com",
+    "betaDomainName": "beta-updates.getspacehound.com",
     "betaGitHubEnvironment": "beta",
     "betaGitHubOidcProviderArn": "",
     "githubBranch": "main",
     "githubConnectionArn": "arn:aws:codeconnections:us-east-1:155091848123:connection/08dff3e7-5804-4584-a65d-254fa51e805a",
-    "githubRepository": "animaslabs/spacerabbit",
+    "githubRepository": "jjkr/spacehound",
     "infraAccount": "155091848123",
     "parentHostedZoneId": "Z022719419UF0M8DE169",
     "prodAccount": "772699011759",
     "prodBandwidthAlarmGibPerHour": 10,
-    "prodDomainName": "updates.getspacerabbit.com",
+    "prodDomainName": "updates.getspacehound.com",
     "prodGitHubEnvironment": "production",
     "prodGitHubOidcProviderArn": "",
-    "rootDomainName": "getspacerabbit.com"
+    "rootDomainName": "getspacehound.com"
   }
 }

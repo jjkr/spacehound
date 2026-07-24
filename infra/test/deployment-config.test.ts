@@ -5,18 +5,18 @@ function context(overrides: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = {
     betaAccount: "499246566000",
     betaBandwidthAlarmGibPerHour: 1,
-    betaDomainName: "beta-updates.getspacerabbit.com",
+    betaDomainName: "beta-updates.getspacehound.com",
     betaGitHubEnvironment: "beta",
     githubBranch: "main",
     githubConnectionArn: "arn:aws:codeconnections:us-east-1:123456789012:connection/test",
-    githubRepository: "animaslabs/spacerabbit",
+    githubRepository: "jjkr/spacehound",
     infraAccount: "155091848123",
     parentHostedZoneId: "Z0123456789EXAMPLE",
     prodAccount: "772699011759",
     prodBandwidthAlarmGibPerHour: 10,
-    prodDomainName: "updates.getspacerabbit.com",
+    prodDomainName: "updates.getspacehound.com",
     prodGitHubEnvironment: "production",
-    rootDomainName: "getspacerabbit.com",
+    rootDomainName: "getspacehound.com",
     ...overrides,
   };
   return {

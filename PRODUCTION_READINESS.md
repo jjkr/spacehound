@@ -1,10 +1,10 @@
-# SpaceRabbit Production Readiness
+# SpaceHound Production Readiness
 
 Last reviewed: July 18, 2026
 
 ## Executive summary
 
-SpaceRabbit's binary delivery chain is in strong shape. The current release is
+SpaceHound's binary delivery chain is in strong shape. The current release is
 Developer ID signed, notarized, stapled, protected by the hardened runtime, and
 distributed through signed Sparkle feeds. Beta and production infrastructure are
 isolated, release artifacts are built once and promoted without rebuilding, and
@@ -52,7 +52,7 @@ only after downloading the DMG.
 
 ### 3. Complete a real compatibility matrix
 
-SpaceRabbit relies on unsupported and undocumented system behavior, including:
+SpaceHound relies on unsupported and undocumented system behavior, including:
 
 - Private SkyLight/CGS APIs for Space queries.
 - Undocumented `CGEvent` gesture fields.
@@ -95,13 +95,13 @@ requests and ordinary pushes do not automatically run the app and core checks.
 Add a pull-request and main-branch workflow that runs:
 
 ```sh
-make -C spacerabbit-core test
+make -C spacehound-core test
 make release-script-tests
 mise exec -- npm --prefix infra run build
 mise exec -- npm --prefix infra test
 make build
-xcodebuild -project SpaceRabbit.xcodeproj \
-  -scheme SpaceRabbit \
+xcodebuild -project SpaceHound.xcodeproj \
+  -scheme SpaceHound \
   -configuration Release \
   -derivedDataPath build/DerivedDataAnalyze \
   CODE_SIGNING_ALLOWED=NO \
@@ -153,7 +153,7 @@ Before launch:
 - Use Unified Logging through `os_log` for lifecycle, permission, update, and
   action failures. Never log pressed keys, window titles, or other sensitive
   content by default.
-- Add an **About SpaceRabbit** surface with the marketing version, build version,
+- Add an **About SpaceHound** surface with the marketing version, build version,
   architecture, macOS version, and update channel.
 - Add **Copy Diagnostics** with a reviewed, privacy-safe payload.
 - Add **Report a Problem** and **Support** actions.

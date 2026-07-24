@@ -1,27 +1,27 @@
-# SpaceRabbit update infrastructure
+# SpaceHound update infrastructure
 
 The CDK app creates a self-mutating CDK Pipeline in the infrastructure account
 and deploys independent update-delivery stacks to beta and production:
 
 | Purpose | Account | Domain |
 | --- | --- | --- |
-| Pipeline and root DNS | `spacerabbit-infra` (`155091848123`) | `getspacerabbit.com` |
-| Beta updates | `spacerabbit-beta` (`499246566000`) | `beta-updates.getspacerabbit.com` |
-| Production updates | `spacerabbit-prod` (`772699011759`) | `updates.getspacerabbit.com` |
+| Pipeline and root DNS | `spacehound-infra` (`155091848123`) | `getspacehound.com` |
+| Beta updates | `spacehound-beta` (`499246566000`) | `beta-updates.getspacehound.com` |
+| Production updates | `spacehound-prod` (`772699011759`) | `updates.getspacehound.com` |
 
 The pipeline automatically deploys beta, verifies its endpoint, then waits for
 manual approval before deploying production. It only triggers for changes to
-`infra/**` or `mise.toml` on `main`. The existing `spacerabbit.app` website is
+`infra/**` or `mise.toml` on `main`. The existing `spacehound.app` website is
 unrelated and is not changed by these stacks.
 
 ## Root DNS and GitHub connection
 
 1. In the infra account, create a public Route 53 hosted zone for
-   `getspacerabbit.com`.
+   `getspacehound.com`.
 2. At the registrar, replace the domain's authoritative name servers with the
    four values from that hosted zone. Record its hosted-zone ID.
 3. In **Developer Tools > Connections** in `us-east-1`, create a GitHub
-   connection for `animaslabs/spacerabbit` and complete the pending GitHub
+   connection for `jjkr/spacehound` and complete the pending GitHub
    authorization. Record the connection ARN.
 4. Put both non-secret values into `infra/cdk.json` as
    `parentHostedZoneId` and `githubConnectionArn`, replacing the empty
@@ -60,15 +60,15 @@ CDK Pipelines needs modern bootstrap stacks in all three accounts. Use local AWS
 profiles that can administer their corresponding accounts:
 
 ```sh
-AWS_PROFILE=spacerabbit-infra mise exec -- npm --prefix infra run cdk -- \
+AWS_PROFILE=spacehound-infra mise exec -- npm --prefix infra run cdk -- \
   bootstrap aws://155091848123/us-east-1
 
-AWS_PROFILE=spacerabbit-beta mise exec -- npm --prefix infra run cdk -- \
+AWS_PROFILE=spacehound-beta mise exec -- npm --prefix infra run cdk -- \
   bootstrap aws://499246566000/us-east-1 \
   --trust 155091848123 \
   --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess
 
-AWS_PROFILE=spacerabbit-prod mise exec -- npm --prefix infra run cdk -- \
+AWS_PROFILE=spacehound-prod mise exec -- npm --prefix infra run cdk -- \
   bootstrap aws://772699011759/us-east-1 \
   --trust 155091848123 \
   --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess
@@ -85,8 +85,8 @@ After the hosted-zone ID and connection ARN are committed in `cdk.json`, deploy
 the pipeline once from a trusted workstation:
 
 ```sh
-AWS_PROFILE=spacerabbit-infra mise exec -- npm --prefix infra run cdk -- \
-  deploy SpaceRabbitInfrastructurePipeline
+AWS_PROFILE=spacehound-infra mise exec -- npm --prefix infra run cdk -- \
+  deploy SpaceHoundInfrastructurePipeline
 ```
 
 The initial deployment creates the DNS delegation role and CodePipeline. Start
@@ -100,11 +100,11 @@ production. Subsequent qualifying commits to `main` are handled automatically.
 Each beta and production update stack owns an environment-specific CloudWatch
 dashboard, five alarms, and a CloudWatch Synthetics canary. The canary runs every
 five minutes, validates `appcast.xml` as XML, and uses HEAD requests to verify
-the current appcast enclosure and `releases/latest/SpaceRabbit-arm64.dmg`
+the current appcast enclosure and `releases/latest/SpaceHound-arm64.dmg`
 without downloading either artifact.
 
-The dashboards are named `SpaceRabbit-beta-UpdateDelivery` and
-`SpaceRabbit-production-UpdateDelivery`. They show endpoint success and
+The dashboards are named `SpaceHound-beta-UpdateDelivery` and
+`SpaceHound-production-UpdateDelivery`. They show endpoint success and
 duration, CloudFront requests, error rates, bytes downloaded, cache-hit rate,
 origin latency, ACM certificate lifetime, and S3 storage. Their names and the
 canary names are also emitted as stack outputs.
@@ -150,19 +150,19 @@ GitHub Actions workflow restricted to the `jjkr` account.
 ## Sparkle signing key bootstrap
 
 Resolve the pinned Sparkle package, then use Sparkle's key tool with the existing
-SpaceRabbit account name:
+SpaceHound account name:
 
 ```sh
 make generate
 xcodebuild -resolvePackageDependencies \
-  -project SpaceRabbit.xcodeproj \
-  -scheme SpaceRabbit \
+  -project SpaceHound.xcodeproj \
+  -scheme SpaceHound \
   -derivedDataPath build/DerivedData
 
 sparkle_bin=build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin
-"${sparkle_bin}/generate_keys" --account com.animaslabs.SpaceRabbit
-"${sparkle_bin}/generate_keys" --account com.animaslabs.SpaceRabbit \
-  -x /secure/offline/location/spacerabbit-sparkle-private-key
+"${sparkle_bin}/generate_keys" --account com.animaslabs.SpaceHound
+"${sparkle_bin}/generate_keys" --account com.animaslabs.SpaceHound \
+  -x /secure/offline/location/spacehound-sparkle-private-key
 ```
 
 The first command prints `SPARKLE_PUBLIC_ED_KEY`. The second exports the private
@@ -173,10 +173,10 @@ an encrypted offline backup, then remove every unencrypted temporary copy.
 ## Candidate promotion
 
 Dispatch **Release candidate** to build `X.Y.ZfcN` once and publish it at
-`https://beta-updates.getspacerabbit.com`. Enable **Receive Beta Updates** from
+`https://beta-updates.getspacehound.com`. Enable **Receive Beta Updates** from
 the app's menu to test it. After testing, `jjkr` dispatches **Promote release**
 with the successful candidate run ID and matching version inputs. Promotion
 downloads that run's retained artifact, verifies its checksums, Developer ID
 signature, notarization ticket, bundle metadata, candidate commit, and
 pre-generated signed appcast, then publishes it to
-`https://updates.getspacerabbit.com` without invoking Xcode.
+`https://updates.getspacehound.com` without invoking Xcode.

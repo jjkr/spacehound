@@ -9,23 +9,23 @@ function template(
 ): Template {
   const app = new App();
   const domainName = environmentName === "beta"
-    ? "beta-updates.getspacerabbit.com"
-    : "updates.getspacerabbit.com";
+    ? "beta-updates.getspacehound.com"
+    : "updates.getspacehound.com";
   const stack = new UpdateDistributionStack(app, "TestStack", {
     bandwidthAlarmGibPerHour: environmentName === "beta" ? 1 : 10,
-    delegationRoleArn: "arn:aws:iam::155091848123:role/SpaceRabbitDnsDelegationRole",
+    delegationRoleArn: "arn:aws:iam::155091848123:role/SpaceHoundDnsDelegationRole",
     domainName,
     env: { account: "123456789012", region: "us-east-1" },
     environmentName,
     githubEnvironment: environmentName === "beta" ? "beta" : "production",
     githubOidcProviderArn,
-    githubRepository: "animaslabs/spacerabbit",
+    githubRepository: "jjkr/spacehound",
     parentHostedZoneId: "Z0123456789EXAMPLE",
   });
   return Template.fromStack(stack);
 }
 
-describe("SpaceRabbit update distribution", () => {
+describe("SpaceHound update distribution", () => {
   it("retains a private, encrypted, versioned artifact bucket", () => {
     template().hasResource("AWS::S3::Bucket", {
       DeletionPolicy: "Retain",
@@ -46,7 +46,7 @@ describe("SpaceRabbit update distribution", () => {
   it("serves one environment through an independent domain and bucket", () => {
     template("beta").hasResourceProperties("AWS::CloudFront::Distribution", {
       DistributionConfig: Match.objectLike({
-        Aliases: ["beta-updates.getspacerabbit.com"],
+        Aliases: ["beta-updates.getspacehound.com"],
         CacheBehaviors: Match.arrayWith([
           Match.objectLike({ PathPattern: "appcast.xml" }),
           Match.objectLike({ PathPattern: "releases/latest/*" }),
@@ -69,10 +69,10 @@ describe("SpaceRabbit update distribution", () => {
       },
     });
     betaTemplate.hasResourceProperties("AWS::Synthetics::Canary", {
-      Name: "sr-beta-updates",
+      Name: "sh-beta-updates",
       RunConfig: Match.objectLike({
         EnvironmentVariables: {
-          BASE_URL: "https://beta-updates.getspacerabbit.com",
+          BASE_URL: "https://beta-updates.getspacehound.com",
         },
       }),
       RuntimeVersion: "syn-nodejs-puppeteer-12.0",
@@ -84,10 +84,10 @@ describe("SpaceRabbit update distribution", () => {
   it("creates account-local dashboards and low-noise alarms without actions", () => {
     const betaTemplate = template("beta");
     betaTemplate.hasResourceProperties("AWS::CloudWatch::Dashboard", {
-      DashboardName: "SpaceRabbit-beta-UpdateDelivery",
+      DashboardName: "SpaceHound-beta-UpdateDelivery",
     });
     betaTemplate.hasResourceProperties("AWS::CloudWatch::Alarm", {
-      AlarmName: "SpaceRabbit-beta-UpdateEndpoint",
+      AlarmName: "SpaceHound-beta-UpdateEndpoint",
       ComparisonOperator: "LessThanThreshold",
       DatapointsToAlarm: 2,
       EvaluationPeriods: 3,
@@ -95,7 +95,7 @@ describe("SpaceRabbit update distribution", () => {
       TreatMissingData: "breaching",
     });
     betaTemplate.hasResourceProperties("AWS::CloudWatch::Alarm", {
-      AlarmName: "SpaceRabbit-beta-HourlyBandwidth",
+      AlarmName: "SpaceHound-beta-HourlyBandwidth",
       ComparisonOperator: "GreaterThanThreshold",
       EvaluationPeriods: 1,
       Metrics: Match.arrayWith([
@@ -106,7 +106,7 @@ describe("SpaceRabbit update distribution", () => {
     });
     for (const [status, threshold] of [["4xx", 10], ["5xx", 5]] as const) {
       betaTemplate.hasResourceProperties("AWS::CloudWatch::Alarm", {
-        AlarmName: `SpaceRabbit-beta-CloudFront${status}`,
+        AlarmName: `SpaceHound-beta-CloudFront${status}`,
         ComparisonOperator: "GreaterThanThreshold",
         DatapointsToAlarm: 2,
         EvaluationPeriods: 3,
@@ -118,7 +118,7 @@ describe("SpaceRabbit update distribution", () => {
       });
     }
     betaTemplate.hasResourceProperties("AWS::CloudWatch::Alarm", {
-      AlarmName: "SpaceRabbit-beta-CertificateExpiry",
+      AlarmName: "SpaceHound-beta-CertificateExpiry",
       ComparisonOperator: "LessThanThreshold",
       EvaluationPeriods: 1,
       Threshold: 30,
@@ -139,7 +139,7 @@ describe("SpaceRabbit update distribution", () => {
 
   it("uses the production bandwidth threshold independently", () => {
     template("production").hasResourceProperties("AWS::CloudWatch::Alarm", {
-      AlarmName: "SpaceRabbit-production-HourlyBandwidth",
+      AlarmName: "SpaceHound-production-HourlyBandwidth",
       Threshold: 10737418240,
     });
   });
@@ -150,8 +150,8 @@ describe("SpaceRabbit update distribution", () => {
       UpdateReplacePolicy: "Retain",
     });
     template().hasResourceProperties("Custom::CrossAccountZoneDelegation", {
-      AssumeRoleArn: "arn:aws:iam::155091848123:role/SpaceRabbitDnsDelegationRole",
-      DelegatedZoneName: "updates.getspacerabbit.com",
+      AssumeRoleArn: "arn:aws:iam::155091848123:role/SpaceHoundDnsDelegationRole",
+      DelegatedZoneName: "updates.getspacehound.com",
       ParentZoneId: "Z0123456789EXAMPLE",
     });
   });
@@ -165,7 +165,7 @@ describe("SpaceRabbit update distribution", () => {
               StringEquals: {
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
                 "token.actions.githubusercontent.com:sub":
-                  "repo:animaslabs/spacerabbit:environment:beta",
+                  "repo:jjkr/spacehound:environment:beta",
               },
             },
           }),

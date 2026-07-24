@@ -1,0 +1,103 @@
+{
+  "version": 10,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 30,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "ninja-debug",
+      "displayName": "Ninja Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
+        "SPACEHOUND_BUILD_TESTS": "ON",
+        "SPACEHOUND_BUILD_EXAMPLES": "ON",
+        "SPACEHOUND_BUILD_LEGACY_EXAMPLES": "OFF",
+        "SPACEHOUND_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "ninja-release",
+      "displayName": "Ninja Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
+        "SPACEHOUND_BUILD_TESTS": "ON",
+        "SPACEHOUND_BUILD_EXAMPLES": "ON",
+        "SPACEHOUND_BUILD_LEGACY_EXAMPLES": "OFF",
+        "SPACEHOUND_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "ninja-coverage",
+      "displayName": "Ninja Coverage",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
+        "SPACEHOUND_BUILD_TESTS": "ON",
+        "SPACEHOUND_BUILD_EXAMPLES": "OFF",
+        "SPACEHOUND_BUILD_LEGACY_EXAMPLES": "OFF",
+        "SPACEHOUND_WARNINGS_AS_ERRORS": "OFF",
+        "SPACEHOUND_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "xcode-debug",
+      "displayName": "Xcode Debug",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
+        "SPACEHOUND_BUILD_TESTS": "ON",
+        "SPACEHOUND_BUILD_EXAMPLES": "ON",
+        "SPACEHOUND_BUILD_LEGACY_EXAMPLES": "OFF",
+        "SPACEHOUND_WARNINGS_AS_ERRORS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "ninja-debug",
+      "configurePreset": "ninja-debug"
+    },
+    {
+      "name": "ninja-release",
+      "configurePreset": "ninja-release"
+    },
+    {
+      "name": "ninja-coverage",
+      "configurePreset": "ninja-coverage"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ninja-debug",
+      "configurePreset": "ninja-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ninja-release",
+      "configurePreset": "ninja-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ninja-coverage",
+      "configurePreset": "ninja-coverage",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

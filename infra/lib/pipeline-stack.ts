@@ -24,7 +24,7 @@ export class PipelineStack extends Stack {
         new iam.AccountPrincipal(props.config.beta.account),
         new iam.AccountPrincipal(props.config.production.account),
       ),
-      roleName: "SpaceRabbitDnsDelegationRole",
+      roleName: "SpaceHoundDnsDelegationRole",
     });
     parentZone.grantDelegation(delegationRole, {
       delegatedZoneNames: [
@@ -32,7 +32,7 @@ export class PipelineStack extends Stack {
         props.config.production.domainName,
       ],
     });
-    const delegationRoleArn = `arn:${this.partition}:iam::${props.config.infraAccount}:role/SpaceRabbitDnsDelegationRole`;
+    const delegationRoleArn = `arn:${this.partition}:iam::${props.config.infraAccount}:role/SpaceHoundDnsDelegationRole`;
 
     const source = CodePipelineSource.connection(
       props.config.githubRepository,
@@ -46,7 +46,7 @@ export class PipelineStack extends Stack {
       cdkAssetsCliVersion: "4.6.0",
       cliVersion: "2.1132.0",
       crossAccountKeys: true,
-      pipelineName: "SpaceRabbit-Infrastructure",
+      pipelineName: "SpaceHound-Infrastructure",
       pipelineType: codepipeline.PipelineType.V2,
       selfMutation: true,
       synth: new ShellStep("Synth", {

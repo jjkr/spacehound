@@ -11,7 +11,7 @@ package_script="${root_dir}/scripts/package-release.sh"
 symbol_uploader="${root_dir}/scripts/upload-sentry-symbols.sh"
 candidate_workflow="${root_dir}/.github/workflows/release.yml"
 promotion_workflow="${root_dir}/.github/workflows/promote-release.yml"
-test_dir=$(mktemp -d "${TMPDIR:-/tmp}/spacerabbit-release-tests.XXXXXX")
+test_dir=$(mktemp -d "${TMPDIR:-/tmp}/spacehound-release-tests.XXXXXX")
 function cleanup() {
   rm -rf "${test_dir}"
 }
@@ -72,17 +72,17 @@ chmod +x "${test_dir}/bin/sentry-cli"
 
 checker_path="${test_dir}/bin:${PATH}"
 [[ "$(env PATH="${checker_path}" MOCK_GH_RESULT=available \
-  "${availability_checker}" animaslabs/spacerabbit 1.2.3)" == "v1.2.3 is available" ]]
+  "${availability_checker}" jjkr/spacehound 1.2.3)" == "v1.2.3 is available" ]]
 expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=exists \
-  "${availability_checker}" animaslabs/spacerabbit 1.2.3
+  "${availability_checker}" jjkr/spacehound 1.2.3
 expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=unknown \
-  "${availability_checker}" animaslabs/spacerabbit 1.2.3
+  "${availability_checker}" jjkr/spacehound 1.2.3
 expect_failure env PATH="${checker_path}" MOCK_GH_RESULT=error \
-  "${availability_checker}" animaslabs/spacerabbit 1.2.3
+  "${availability_checker}" jjkr/spacehound 1.2.3
 expect_failure "${availability_checker}" invalid-repository 1.2.3
-expect_failure "${availability_checker}" animaslabs/spacerabbit 1.2
+expect_failure "${availability_checker}" jjkr/spacehound 1.2
 
-mkdir -p "${test_dir}/dsyms/SpaceRabbit.app.dSYM"
+mkdir -p "${test_dir}/dsyms/SpaceHound.app.dSYM"
 mkdir -p "${test_dir}/empty-dsyms"
 expect_failure env PATH="/usr/bin:/bin" \
   "${symbol_uploader}" "${test_dir}/dsyms"
@@ -104,25 +104,25 @@ diff -u - "${test_dir}/sentry-args" <<EOF
 debug-files
 upload
 --org
-animaslabs
+jjkr
 --project
-spacerabbit
+spacehound
 ${test_dir}/dsyms
 EOF
 
 cat > "${test_dir}/notes.md" <<'EOF'
 ## Highlights
 
-SpaceRabbit is faster than ever.
+SpaceHound is faster than ever.
 EOF
 "${notes_preparer}" \
   1.2.3 1.2.3fc4 "${test_dir}/notes.md" "${test_dir}/dist" >/dev/null
-beta_notes="${test_dir}/dist/beta/SpaceRabbit-1.2.3-fc4-arm64.md"
-production_notes="${test_dir}/dist/production/SpaceRabbit-1.2.3-fc4-arm64.md"
-grep -q '^# SpaceRabbit 1.2.3 (final candidate 4)$' "${beta_notes}"
-grep -q '^# SpaceRabbit 1.2.3$' "${production_notes}"
-grep -q '^SpaceRabbit is faster than ever\.$' "${beta_notes}"
-grep -q '^SpaceRabbit is faster than ever\.$' "${production_notes}"
+beta_notes="${test_dir}/dist/beta/SpaceHound-1.2.3-fc4-arm64.md"
+production_notes="${test_dir}/dist/production/SpaceHound-1.2.3-fc4-arm64.md"
+grep -q '^# SpaceHound 1.2.3 (final candidate 4)$' "${beta_notes}"
+grep -q '^# SpaceHound 1.2.3$' "${production_notes}"
+grep -q '^SpaceHound is faster than ever\.$' "${beta_notes}"
+grep -q '^SpaceHound is faster than ever\.$' "${production_notes}"
 expect_failure "${notes_preparer}" \
   1.2.3 1.2.3fc4 "${test_dir}/missing.md" "${test_dir}/missing-dist"
 print -r -- '<!-- RELEASE_NOTES_PLACEHOLDER -->' > "${test_dir}/placeholder.md"
@@ -133,7 +133,7 @@ if grep -q '^  promote:' "${candidate_workflow}"; then
   echo "error: candidate workflow must not contain an automatic promotion job" >&2
   exit 1
 fi
-grep -q 'group: spacerabbit-release' "${candidate_workflow}"
+grep -q 'group: spacehound-release' "${candidate_workflow}"
 grep -q 'Candidate run ID:.*GITHUB_RUN_ID' "${candidate_workflow}"
 grep -q 'release-notes/v${RELEASE_VERSION}.md' "${candidate_workflow}"
 grep -q 'SENTRY_DSN:.*vars.SENTRY_DSN' "${candidate_workflow}"
@@ -143,7 +143,7 @@ if grep -q 'generate-notes' "${candidate_workflow}"; then
   echo "error: candidate workflow must use authored release notes" >&2
   exit 1
 fi
-grep -q 'group: spacerabbit-release' "${promotion_workflow}"
+grep -q 'group: spacehound-release' "${promotion_workflow}"
 grep -q 'GITHUB_ACTOR.*jjkr' "${promotion_workflow}"
 grep -q 'GITHUB_REF.*refs/heads/main' "${promotion_workflow}"
 grep -q 'workflow_path.*\.github/workflows/release\.yml' "${promotion_workflow}"

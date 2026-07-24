@@ -1,5 +1,5 @@
 {
-  "name": "spacerabbit-update-infrastructure",
+  "name": "spacehound-update-infrastructure",
   "version": "0.1.0",
   "private": true,
   "packageManager": "npm@11.17.0",

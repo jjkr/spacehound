@@ -1,18 +1,18 @@
 SHELL := /bin/zsh
 
-PROJECT := SpaceRabbit.xcodeproj
+PROJECT := SpaceHound.xcodeproj
 PROJECT_SPEC := project.yml
-SCHEME := SpaceRabbit
+SCHEME := SpaceHound
 CONFIGURATION ?= Debug
 DERIVED_DATA_PATH ?= build/DerivedData
 SENTRY_DSN ?=
-APP_NAME := SpaceRabbit.app
+APP_NAME := SpaceHound.app
 APP_PATH := $(DERIVED_DATA_PATH)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
 
 .PHONY: help generate build release package-release release-script-tests infra-install infra-test run open clean distclean app-path
 
 help:
-	@echo "SpaceRabbit development targets"
+	@echo "SpaceHound development targets"
 	@echo ""
 	@echo "  make generate           Generate $(PROJECT) from $(PROJECT_SPEC)"
 	@echo "  make build              Build $(SCHEME) ($(CONFIGURATION))"

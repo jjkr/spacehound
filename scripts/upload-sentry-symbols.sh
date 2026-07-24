@@ -16,8 +16,8 @@ if [[ $# -ne 1 ]]; then
 fi
 
 dsym_path="$1"
-SENTRY_ORG="${SENTRY_ORG:-animaslabs}"
-SENTRY_PROJECT="${SENTRY_PROJECT:-spacerabbit}"
+SENTRY_ORG="${SENTRY_ORG:-jjkr}"
+SENTRY_PROJECT="${SENTRY_PROJECT:-spacehound}"
 
 require_env SENTRY_AUTH_TOKEN
 

@@ -22,7 +22,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: spacerabbit-release
+  group: spacehound-release
   cancel-in-progress: false
 
 jobs:
@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
 
           if [[ "${GITHUB_ACTOR}" != "jjkr" ]]; then
-            echo "::error::Only jjkr may promote a SpaceRabbit release"
+            echo "::error::Only jjkr may promote a SpaceHound release"
             exit 1
           fi
           if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
@@ -98,7 +98,7 @@ jobs:
       - name: Download exact beta candidate
         uses: actions/download-artifact@v7
         with:
-          name: SpaceRabbit-${{ env.RELEASE_ARTIFACT_VERSION }}
+          name: SpaceHound-${{ env.RELEASE_ARTIFACT_VERSION }}
           path: build/dist
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
@@ -122,12 +122,12 @@ jobs:
           done
 
           shasum -a 256 -c build/dist/release-manifest-SHA256SUMS.txt
-          archive="build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
-          dmg="build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
-          verify_dir="${RUNNER_TEMP}/spacerabbit-candidate"
+          archive="build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          dmg="build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
+          verify_dir="${RUNNER_TEMP}/spacehound-candidate"
           mkdir -p "${verify_dir}"
           ditto -x -k "${archive}" "${verify_dir}"
-          app="${verify_dir}/SpaceRabbit.app"
+          app="${verify_dir}/SpaceHound.app"
           codesign --verify --deep --strict --verbose=2 "${app}"
           spctl --assess --type execute --verbose=4 "${app}"
           xcrun stapler validate "${app}"
@@ -137,15 +137,15 @@ jobs:
           info="${app}/Contents/Info.plist"
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info}")" == "${RELEASE_VERSION}" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info}")" == "${RELEASE_BUILD_VERSION}" ]]
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "${info}")" == 'https://updates.getspacerabbit.com/appcast.xml' ]]
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUBetaFeedURL' "${info}")" == 'https://beta-updates.getspacerabbit.com/appcast.xml' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "${info}")" == 'https://updates.getspacehound.com/appcast.xml' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUBetaFeedURL' "${info}")" == 'https://beta-updates.getspacehound.com/appcast.xml' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "${info}")" == "${SPARKLE_PUBLIC_ED_KEY}" ]]
 
           appcast=build/dist/production-appcast.xml
           xmllint --noout "${appcast}"
           [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="version"])' "${appcast}")" == "${RELEASE_BUILD_VERSION}" ]]
           [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="shortVersionString"])' "${appcast}")" == "${RELEASE_VERSION}" ]]
-          expected_archive_url="https://updates.getspacerabbit.com/releases/v${RELEASE_VERSION}/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          expected_archive_url="https://updates.getspacehound.com/releases/v${RELEASE_VERSION}/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
           [[ "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@url)' "${appcast}")" == "${expected_archive_url}" ]]
           [[ -n "$(xmllint --xpath 'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@*[local-name()="edSignature"])' "${appcast}")" ]]
           grep -q '<!-- sparkle-signatures:' "${appcast}"
@@ -174,10 +174,10 @@ jobs:
         run: |
           set -euo pipefail
           release_prefix="releases/v${RELEASE_VERSION}"
-          archive_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
-          dmg_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
-          checksums_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt"
-          notes_name="SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
+          archive_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
+          dmg_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
+          checksums_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt"
+          notes_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.md"
 
           if aws s3api head-object --bucket "${AWS_RELEASE_BUCKET}" \
             --key "${release_prefix}/${archive_name}" >/dev/null 2>&1; then
@@ -200,24 +200,24 @@ jobs:
           tag="v${RELEASE_VERSION}"
           ./scripts/check-release-availability.sh "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
           gh release create "${tag}" \
-            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
-            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
-            "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
+            "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
+            "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
+            "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
             --target "${CANDIDATE_SHA}" \
             --title "${tag}" \
-            --notes-file "build/dist/production/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.md"
+            --notes-file "build/dist/production/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.md"
 
       - name: Update production aliases and publish appcast last
         run: |
           set -euo pipefail
-          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
-            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-arm64.zip" \
+          aws s3 cp "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceHound-arm64.zip" \
             --cache-control 'no-cache,max-age=0' --content-type application/zip
-          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
-            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-arm64.dmg" \
+          aws s3 cp "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceHound-arm64.dmg" \
             --cache-control 'no-cache,max-age=0' --content-type application/x-apple-diskimage
-          aws s3 cp "build/dist/SpaceRabbit-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
-            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceRabbit-SHA256SUMS.txt" \
+          aws s3 cp "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
+            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceHound-SHA256SUMS.txt" \
             --cache-control 'no-cache,max-age=0' --content-type 'text/plain; charset=utf-8'
           aws s3 cp build/dist/production-appcast.xml "s3://${AWS_RELEASE_BUCKET}/appcast.xml" \
             --cache-control 'no-cache,max-age=0' --content-type 'application/xml; charset=utf-8'

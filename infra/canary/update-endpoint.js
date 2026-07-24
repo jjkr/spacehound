@@ -69,7 +69,7 @@ exports.handler = async () => {
 
   await synthetics.executeStep("check-latest-dmg", async () => {
     await checkHead(
-      new URL("/releases/latest/SpaceRabbit-arm64.dmg", base).toString(),
+      new URL("/releases/latest/SpaceHound-arm64.dmg", base).toString(),
       base.hostname,
     );
   });

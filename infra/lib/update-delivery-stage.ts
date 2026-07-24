@@ -24,7 +24,7 @@ export class UpdateDeliveryStage extends Stage {
       githubOidcProviderArn: props.environmentConfig.githubOidcProviderArn,
       githubRepository: props.githubRepository,
       parentHostedZoneId: props.parentHostedZoneId,
-      stackName: `SpaceRabbit-${props.environmentConfig.name}-UpdateDistribution`,
+      stackName: `SpaceHound-${props.environmentConfig.name}-UpdateDistribution`,
     });
   }
 }

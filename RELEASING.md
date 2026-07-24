@@ -1,6 +1,6 @@
-# Releasing SpaceRabbit
+# Releasing SpaceHound
 
-This is the operational runbook for publishing SpaceRabbit. For release
+This is the operational runbook for publishing SpaceHound. For release
 architecture and local packaging details, see [DEVELOPMENT.md](DEVELOPMENT.md).
 For initial AWS, DNS, OIDC, and GitHub environment setup, see
 [infra/README.md](infra/README.md).
@@ -33,7 +33,7 @@ Before the first release, complete the infrastructure setup in
   `SPARKLE_PUBLIC_ED_KEY` variables populated from its CDK stack outputs.
 - The `beta` environment has the public `SENTRY_DSN` variable and the private
   `SENTRY_AUTH_TOKEN` secret. The token must have `org:ci` access.
-- The `animaslabs/spacerabbit` Sentry project has default data scrubbing enabled
+- The `jjkr/spacehound` Sentry project has default data scrubbing enabled
   and **Prevent Storing of IP Addresses** turned on under Security & Privacy.
 - The candidate workflow can access the Developer ID certificate, Apple
   notarization, temporary keychain, and Sparkle private-key secrets listed in
@@ -84,7 +84,7 @@ Run the release checks. This example prepares `0.3.0` candidate `1`:
 ```sh
 make release-script-tests
 ./scripts/validate-release-version.sh 0.3.0 0.3.0fc1
-./scripts/check-release-availability.sh animaslabs/spacerabbit 0.3.0
+./scripts/check-release-availability.sh jjkr/spacehound 0.3.0
 ```
 
 The availability check uses the GitHub CLI, so `gh auth status` must succeed.
@@ -100,7 +100,7 @@ The equivalent CLI command is:
 
 ```sh
 gh workflow run release.yml \
-  --repo animaslabs/spacerabbit \
+  --repo jjkr/spacehound \
   --ref main \
   -f version=0.3.0 \
   -f candidate=1
@@ -110,13 +110,13 @@ Find and monitor the run:
 
 ```sh
 gh run list \
-  --repo animaslabs/spacerabbit \
+  --repo jjkr/spacehound \
   --workflow release.yml \
   --event workflow_dispatch \
   --limit 5
 
 gh run watch CANDIDATE_RUN_ID \
-  --repo animaslabs/spacerabbit \
+  --repo jjkr/spacehound \
   --interval 10 \
   --exit-status
 ```
@@ -125,27 +125,27 @@ Save the numeric candidate run ID. A successful run publishes:
 
 - Immutable beta artifacts under `releases/vX.Y.Z-fcN/`.
 - Beta `latest` aliases and the beta appcast.
-- A retained GitHub Actions artifact named `SpaceRabbit-X.Y.Z-fcN` containing
+- A retained GitHub Actions artifact named `SpaceHound-X.Y.Z-fcN` containing
   the candidate, authored release notes, and production appcast. It is retained
   for 30 days.
-- The archive's dSYMs to `animaslabs/spacerabbit`. Missing credentials, missing
+- The archive's dSYMs to `jjkr/spacehound`. Missing credentials, missing
   symbols, or a failed upload stops the candidate before publication.
 
 ## 3. Verify the beta
 
 Do not promote until the beta candidate has been approved. At minimum:
 
-- Confirm `https://beta-updates.getspacerabbit.com/appcast.xml` names the
+- Confirm `https://beta-updates.getspacehound.com/appcast.xml` names the
   expected `X.Y.ZfcN` bundle version.
 - Confirm the latest beta DMG is reachable at
-  `https://beta-updates.getspacerabbit.com/releases/latest/SpaceRabbit-arm64.dmg`.
-- In an installed copy of SpaceRabbit, enable **Receive Beta Updates**, choose
+  `https://beta-updates.getspacehound.com/releases/latest/SpaceHound-arm64.dmg`.
+- In an installed copy of SpaceHound, enable **Receive Beta Updates**, choose
   **Check for Updates…**, and install the candidate.
 - Confirm the update signature is accepted, installation completes, the app
   relaunches, and its core behavior works.
 - For the first monitored release, use a disposable pre-release build with a
   temporary intentional crash, relaunch it to send the cached event, and confirm
-  Sentry shows the expected release/build with symbolicated SpaceRabbit frames.
+  Sentry shows the expected release/build with symbolicated SpaceHound frames.
   Remove the crash trigger before building the candidate that may be published.
 - Record explicit approval to promote this candidate.
 
@@ -153,9 +153,9 @@ Basic endpoint checks can be run with:
 
 ```sh
 curl --fail --show-error \
-  https://beta-updates.getspacerabbit.com/appcast.xml
+  https://beta-updates.getspacehound.com/appcast.xml
 curl --fail --show-error --head \
-  https://beta-updates.getspacerabbit.com/releases/latest/SpaceRabbit-arm64.dmg
+  https://beta-updates.getspacehound.com/releases/latest/SpaceHound-arm64.dmg
 ```
 
 ## 4. Promote the approved candidate
@@ -171,7 +171,7 @@ The equivalent CLI command is:
 
 ```sh
 gh workflow run promote-release.yml \
-  --repo animaslabs/spacerabbit \
+  --repo jjkr/spacehound \
   --ref main \
   -f candidate_run_id=CANDIDATE_RUN_ID \
   -f version=0.3.0 \
@@ -182,13 +182,13 @@ Monitor the promotion:
 
 ```sh
 gh run list \
-  --repo animaslabs/spacerabbit \
+  --repo jjkr/spacehound \
   --workflow promote-release.yml \
   --event workflow_dispatch \
   --limit 5
 
 gh run watch PROMOTION_RUN_ID \
-  --repo animaslabs/spacerabbit \
+  --repo jjkr/spacehound \
   --interval 10 \
   --exit-status
 ```
@@ -205,10 +205,10 @@ Confirm the production endpoints and GitHub Release:
 
 ```sh
 curl --fail --show-error \
-  https://updates.getspacerabbit.com/appcast.xml
+  https://updates.getspacehound.com/appcast.xml
 curl --fail --show-error --head \
-  https://updates.getspacerabbit.com/releases/latest/SpaceRabbit-arm64.dmg
-gh release view v0.3.0 --repo animaslabs/spacerabbit
+  https://updates.getspacehound.com/releases/latest/SpaceHound-arm64.dmg
+gh release view v0.3.0 --repo jjkr/spacehound
 ```
 
 Also disable **Receive Beta Updates** in a stable installation, choose **Check

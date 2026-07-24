@@ -1,4 +1,4 @@
-name: SpaceRabbit
+name: SpaceHound
 
 options:
   createIntermediateGroups: true
@@ -10,8 +10,8 @@ settings:
     CURRENT_PROJECT_VERSION: 0.3.0fc1
     MARKETING_VERSION: 0.3.0
     CLANG_ENABLE_OBJC_ARC: YES
-    SPARKLE_FEED_URL: https://updates.getspacerabbit.com/appcast.xml
-    SPARKLE_BETA_FEED_URL: https://beta-updates.getspacerabbit.com/appcast.xml
+    SPARKLE_FEED_URL: https://updates.getspacehound.com/appcast.xml
+    SPARKLE_BETA_FEED_URL: https://beta-updates.getspacehound.com/appcast.xml
     SPARKLE_PUBLIC_ED_KEY: ""
     SENTRY_DSN: ""
 
@@ -24,26 +24,26 @@ packages:
     exactVersion: 2.9.2
 
 targets:
-  SpaceRabbit:
+  SpaceHound:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: SpaceRabbitApp/Sources
-      - path: spacerabbit-core/lib/control.cpp
-      - path: spacerabbit-core/lib/daemon.cpp
-      - path: spacerabbit-core/lib/display_switch.cpp
-      - path: spacerabbit-core/lib/ns.mm
+      - path: SpaceHoundApp/Sources
+      - path: spacehound-core/lib/control.cpp
+      - path: spacehound-core/lib/daemon.cpp
+      - path: spacehound-core/lib/display_switch.cpp
+      - path: spacehound-core/lib/ns.mm
         compilerFlags:
           - -fno-objc-arc
-      - path: spacerabbit-core/lib/settings.cpp
-      - path: spacerabbit-core/lib/version.cpp
-      - path: SpaceRabbitApp/Resources
+      - path: spacehound-core/lib/settings.cpp
+      - path: spacehound-core/lib/version.cpp
+      - path: SpaceHoundApp/Resources
         buildPhase: resources
     settings:
       base:
-        PRODUCT_NAME: SpaceRabbit
-        PRODUCT_BUNDLE_IDENTIFIER: com.animaslabs.SpaceRabbit
+        PRODUCT_NAME: SpaceHound
+        PRODUCT_BUNDLE_IDENTIFIER: com.animaslabs.SpaceHound
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         CLANG_CXX_LANGUAGE_STANDARD: c++23
@@ -52,10 +52,10 @@ targets:
           - /System/Library/PrivateFrameworks
         HEADER_SEARCH_PATHS:
           - $(inherited)
-          - $(SRCROOT)/spacerabbit-core/include
-          - $(SRCROOT)/spacerabbit-core/lib
+          - $(SRCROOT)/spacehound-core/include
+          - $(SRCROOT)/spacehound-core/lib
           - $(SRCROOT)/third_party
-          - $(DERIVED_FILE_DIR)/spacerabbit-generated/include
+          - $(DERIVED_FILE_DIR)/spacehound-generated/include
         OTHER_LDFLAGS:
           - $(inherited)
           - -framework ApplicationServices
@@ -69,13 +69,13 @@ targets:
       - package: Sentry
       - package: Sparkle
     preBuildScripts:
-      - name: Generate spacerabbit version header
+      - name: Generate spacehound version header
         outputFiles:
-          - $(DERIVED_FILE_DIR)/spacerabbit-generated/include/spacerabbit/version.hpp
+          - $(DERIVED_FILE_DIR)/spacehound-generated/include/spacehound/version.hpp
         script: |
           set -euo pipefail
 
-          generated_dir="${DERIVED_FILE_DIR}/spacerabbit-generated/include/spacerabbit"
+          generated_dir="${DERIVED_FILE_DIR}/spacehound-generated/include/spacehound"
           generated_header_path="${generated_dir}/version.hpp"
           marketing_version="${MARKETING_VERSION:-0.3.0}"
 
@@ -99,7 +99,7 @@ targets:
           #include <cstdint>
           #include <string_view>
 
-          namespace spacerabbit {
+          namespace spacehound {
 
           inline constexpr std::uint32_t version_major = ${major};
           inline constexpr std::uint32_t version_minor = ${minor};
@@ -112,12 +112,12 @@ targets:
           auto version_string() noexcept -> std::string_view;
           auto version_full_string() noexcept -> std::string_view;
 
-          }  // namespace spacerabbit
+          }  // namespace spacehound
           EOF
     info:
-      path: SpaceRabbitApp/Info.plist
+      path: SpaceHoundApp/Info.plist
       properties:
-        CFBundleDisplayName: SpaceRabbit
+        CFBundleDisplayName: SpaceHound
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
@@ -135,10 +135,10 @@ targets:
         SentryDSN: $(SENTRY_DSN)
 
 schemes:
-  SpaceRabbit:
+  SpaceHound:
     build:
       targets:
-        SpaceRabbit: all
+        SpaceHound: all
     run:
       config: Debug
     archive:

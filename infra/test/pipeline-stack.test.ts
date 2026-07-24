@@ -3,14 +3,14 @@ import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, it } from "vitest";
 import { PipelineStack } from "../lib/pipeline-stack.js";
 
-describe("SpaceRabbit infrastructure pipeline", () => {
+describe("SpaceHound infrastructure pipeline", () => {
   const app = new App();
   const stack = new PipelineStack(app, "Pipeline", {
     config: {
       beta: {
         account: "499246566000",
         bandwidthAlarmGibPerHour: 1,
-        domainName: "beta-updates.getspacerabbit.com",
+        domainName: "beta-updates.getspacehound.com",
         githubEnvironment: "beta",
         githubOidcProviderArn:
           "arn:aws:iam::499246566000:oidc-provider/token.actions.githubusercontent.com",
@@ -19,20 +19,20 @@ describe("SpaceRabbit infrastructure pipeline", () => {
       githubBranch: "main",
       githubConnectionArn:
         "arn:aws:codestar-connections:us-east-1:155091848123:connection/00000000-0000-0000-0000-000000000000",
-      githubRepository: "animaslabs/spacerabbit",
+      githubRepository: "jjkr/spacehound",
       infraAccount: "155091848123",
       parentHostedZoneId: "Z0123456789EXAMPLE",
       production: {
         account: "772699011759",
         bandwidthAlarmGibPerHour: 10,
-        domainName: "updates.getspacerabbit.com",
+        domainName: "updates.getspacehound.com",
         githubEnvironment: "production",
         githubOidcProviderArn:
           "arn:aws:iam::772699011759:oidc-provider/token.actions.githubusercontent.com",
         name: "production",
       },
       region: "us-east-1",
-      rootDomainName: "getspacerabbit.com",
+      rootDomainName: "getspacehound.com",
     },
     env: { account: "155091848123", region: "us-east-1" },
   });

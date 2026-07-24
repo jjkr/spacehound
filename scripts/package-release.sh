@@ -3,10 +3,10 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
-PROJECT_PATH="${ROOT_DIR}/SpaceRabbit.xcodeproj"
+PROJECT_PATH="${ROOT_DIR}/SpaceHound.xcodeproj"
 PROJECT_SPEC_PATH="${ROOT_DIR}/project.yml"
-SCHEME="SpaceRabbit"
-APP_NAME="SpaceRabbit"
+SCHEME="SpaceHound"
+APP_NAME="SpaceHound"
 BUILD_ROOT="${BUILD_ROOT:-${ROOT_DIR}/build/release}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-${ROOT_DIR}/build/DerivedDataRelease}"
 ARCHIVE_PATH="${BUILD_ROOT}/${APP_NAME}.xcarchive"
@@ -73,8 +73,8 @@ fi
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
 RELEASE_BUILD_VERSION="${RELEASE_BUILD_VERSION:-}"
-SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://updates.getspacerabbit.com/appcast.xml}"
-SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL:-https://beta-updates.getspacerabbit.com/appcast.xml}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://updates.getspacehound.com/appcast.xml}"
+SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL:-https://beta-updates.getspacehound.com/appcast.xml}"
 
 if [[ -n "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="${RELEASE_VERSION#refs/tags/}"

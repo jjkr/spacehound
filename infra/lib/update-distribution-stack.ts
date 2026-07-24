@@ -129,7 +129,7 @@ export class UpdateDistributionStack extends Stack {
             `repo:${props.githubRepository}:environment:${props.githubEnvironment}`,
         },
       }),
-      description: `Publishes SpaceRabbit ${props.environmentName} updates from GitHub Actions`,
+      description: `Publishes SpaceHound ${props.environmentName} updates from GitHub Actions`,
       maxSessionDuration: Duration.hours(1),
     });
 

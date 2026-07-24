@@ -1,7 +1,7 @@
 .DS_Store
 build/
 DerivedData/
-SpaceRabbit.xcodeproj/
+SpaceHound.xcodeproj/
 *.xcuserstate
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/

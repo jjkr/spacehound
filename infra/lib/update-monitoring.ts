@@ -25,7 +25,7 @@ export class UpdateMonitoring extends Construct {
 
     const fiveMinutes = Duration.minutes(5);
     this.canary = new synthetics.Canary(this, "EndpointCanary", {
-      canaryName: `sr-${props.environmentName}-updates`,
+      canaryName: `sh-${props.environmentName}-updates`,
       environmentVariables: {
         BASE_URL: `https://${props.domainName}`,
       },
@@ -93,7 +93,7 @@ export class UpdateMonitoring extends Construct {
     const alarms = [
       new cloudwatch.Alarm(this, "EndpointAlarm", {
         alarmDescription: `The ${props.environmentName} update feed or current downloads failed validation.`,
-        alarmName: `SpaceRabbit-${props.environmentName}-UpdateEndpoint`,
+        alarmName: `SpaceHound-${props.environmentName}-UpdateEndpoint`,
         comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
         datapointsToAlarm: 2,
         evaluationPeriods: 3,
@@ -103,7 +103,7 @@ export class UpdateMonitoring extends Construct {
       }),
       new cloudwatch.Alarm(this, "CloudFront4xxAlarm", {
         alarmDescription: `The ${props.environmentName} distribution exceeded a 10% 4xx rate with at least 20 requests.`,
-        alarmName: `SpaceRabbit-${props.environmentName}-CloudFront4xx`,
+        alarmName: `SpaceHound-${props.environmentName}-CloudFront4xx`,
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         datapointsToAlarm: 2,
         evaluationPeriods: 3,
@@ -113,7 +113,7 @@ export class UpdateMonitoring extends Construct {
       }),
       new cloudwatch.Alarm(this, "CloudFront5xxAlarm", {
         alarmDescription: `The ${props.environmentName} distribution exceeded a 5% 5xx rate with at least 20 requests.`,
-        alarmName: `SpaceRabbit-${props.environmentName}-CloudFront5xx`,
+        alarmName: `SpaceHound-${props.environmentName}-CloudFront5xx`,
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         datapointsToAlarm: 2,
         evaluationPeriods: 3,
@@ -123,7 +123,7 @@ export class UpdateMonitoring extends Construct {
       }),
       new cloudwatch.Alarm(this, "BandwidthAlarm", {
         alarmDescription: `The ${props.environmentName} distribution downloaded more than ${props.bandwidthAlarmGibPerHour} GiB in one hour.`,
-        alarmName: `SpaceRabbit-${props.environmentName}-HourlyBandwidth`,
+        alarmName: `SpaceHound-${props.environmentName}-HourlyBandwidth`,
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         evaluationPeriods: 1,
         metric: hourlyBytes,
@@ -132,7 +132,7 @@ export class UpdateMonitoring extends Construct {
       }),
       new cloudwatch.Alarm(this, "CertificateExpiryAlarm", {
         alarmDescription: `The ${props.environmentName} update certificate expires in fewer than 30 days.`,
-        alarmName: `SpaceRabbit-${props.environmentName}-CertificateExpiry`,
+        alarmName: `SpaceHound-${props.environmentName}-CertificateExpiry`,
         comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
         evaluationPeriods: 1,
         metric: certificateDays,
@@ -177,7 +177,7 @@ export class UpdateMonitoring extends Construct {
     });
 
     this.dashboard = new cloudwatch.Dashboard(this, "Dashboard", {
-      dashboardName: `SpaceRabbit-${props.environmentName}-UpdateDelivery`,
+      dashboardName: `SpaceHound-${props.environmentName}-UpdateDelivery`,
       defaultInterval: Duration.days(1),
       periodOverride: cloudwatch.PeriodOverride.INHERIT,
     });
