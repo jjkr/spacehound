@@ -8,8 +8,6 @@ if(NOT APPLE)
   message(FATAL_ERROR "spacerabbit currently supports macOS only.")
 endif()
 
-include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
 include(CTest)
 include(FetchContent)
 find_package(Git QUIET)
@@ -25,8 +23,6 @@ option(
   OFF
 )
 
-set(SPACERABBIT_PACKAGE_NAME "SpaceRabbit")
-set(SPACERABBIT_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/${SPACERABBIT_PACKAGE_NAME}")
 set(SPACERABBIT_GENERATED_INCLUDE_DIR "${PROJECT_BINARY_DIR}/generated/include")
 
 set(SPACERABBIT_VERSION_BUILD_METADATA "")
@@ -114,7 +110,7 @@ find_library(
   NO_DEFAULT_PATH
 )
 
-set(SPACERABBIT_PUBLIC_HEADERS
+set(SPACERABBIT_HEADERS
   include/spacerabbit/ax.hpp
   include/spacerabbit/cgs.hpp
   include/spacerabbit/cf.hpp
@@ -122,25 +118,10 @@ set(SPACERABBIT_PUBLIC_HEADERS
   include/spacerabbit/control.hpp
   include/spacerabbit/daemon.hpp
   include/spacerabbit/dispatch.hpp
-  include/spacerabbit/export.hpp
   include/spacerabbit/gesture.hpp
   include/spacerabbit/ns.hpp
   include/spacerabbit/settings.hpp
   "${SPACERABBIT_GENERATED_INCLUDE_DIR}/spacerabbit/version.hpp"
-)
-
-set(SPACERABBIT_INSTALL_HEADERS
-  include/spacerabbit/ax.hpp
-  include/spacerabbit/cgs.hpp
-  include/spacerabbit/cf.hpp
-  include/spacerabbit/cg.hpp
-  include/spacerabbit/control.hpp
-  include/spacerabbit/daemon.hpp
-  include/spacerabbit/dispatch.hpp
-  include/spacerabbit/export.hpp
-  include/spacerabbit/gesture.hpp
-  include/spacerabbit/ns.hpp
-  include/spacerabbit/settings.hpp
 )
 
 set(SPACERABBIT_SOURCES
@@ -203,7 +184,7 @@ function(spacerabbit_configure_library target_name)
   target_sources(
     "${target_name}"
     PRIVATE
-      ${SPACERABBIT_PUBLIC_HEADERS}
+      ${SPACERABBIT_HEADERS}
       ${SPACERABBIT_SOURCES}
   )
 
@@ -214,7 +195,6 @@ function(spacerabbit_configure_library target_name)
     PUBLIC
       $<BUILD_INTERFACE:${SPACERABBIT_GENERATED_INCLUDE_DIR}>
       $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
       ${PROJECT_SOURCE_DIR}/lib
       $<TARGET_PROPERTY:nlohmann_json::nlohmann_json,INTERFACE_INCLUDE_DIRECTORIES>
@@ -245,91 +225,25 @@ function(spacerabbit_configure_library target_name)
     PROPERTIES
       CXX_STANDARD 23
       CXX_EXTENSIONS OFF
-      CXX_VISIBILITY_PRESET hidden
       OBJCXX_EXTENSIONS OFF
       OBJCXX_STANDARD 23
-      POSITION_INDEPENDENT_CODE ON
-      VISIBILITY_INLINES_HIDDEN YES
       OUTPUT_NAME spacerabbit
   )
 
   spacerabbit_apply_warnings("${target_name}")
 endfunction()
 
-add_library(spacerabbit_static STATIC)
-spacerabbit_configure_library(spacerabbit_static)
-spacerabbit_enable_coverage(spacerabbit_static)
-
-add_library(spacerabbit_shared SHARED)
-spacerabbit_configure_library(spacerabbit_shared)
-spacerabbit_enable_coverage(spacerabbit_shared)
-target_compile_definitions(
-  spacerabbit_shared
-  PRIVATE SPACERABBIT_SHARED_BUILD=1
-  INTERFACE SPACERABBIT_SHARED=1
-)
-set_target_properties(
-  spacerabbit_shared
-  PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-  )
-
-install(
-  TARGETS spacerabbit_static spacerabbit_shared
-  EXPORT SpaceRabbitTargets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
-
-install(
-  FILES ${SPACERABBIT_INSTALL_HEADERS}
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/spacerabbit"
-)
-
-install(
-  FILES "${SPACERABBIT_GENERATED_INCLUDE_DIR}/spacerabbit/version.hpp"
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/spacerabbit"
-)
-
-configure_package_config_file(
-  "${PROJECT_SOURCE_DIR}/cmake/SpaceRabbitConfig.cmake.in"
-  "${PROJECT_BINARY_DIR}/SpaceRabbitConfig.cmake"
-  INSTALL_DESTINATION "${SPACERABBIT_INSTALL_CMAKEDIR}"
-)
-
-write_basic_package_version_file(
-  "${PROJECT_BINARY_DIR}/SpaceRabbitConfigVersion.cmake"
-  VERSION "${PROJECT_VERSION}"
-  COMPATIBILITY SameMajorVersion
-)
-
-install(
-  EXPORT SpaceRabbitTargets
-  FILE SpaceRabbitTargets.cmake
-  DESTINATION "${SPACERABBIT_INSTALL_CMAKEDIR}"
-)
-
-install(
-  FILES
-    "${PROJECT_BINARY_DIR}/SpaceRabbitConfig.cmake"
-    "${PROJECT_BINARY_DIR}/SpaceRabbitConfigVersion.cmake"
-  DESTINATION "${SPACERABBIT_INSTALL_CMAKEDIR}"
-)
-
-export(
-  EXPORT SpaceRabbitTargets
-  FILE "${PROJECT_BINARY_DIR}/SpaceRabbitTargets.cmake"
-)
+add_library(spacerabbit_core STATIC)
+add_library(spacerabbit::core ALIAS spacerabbit_core)
+spacerabbit_configure_library(spacerabbit_core)
+spacerabbit_enable_coverage(spacerabbit_core)
 
 if(SPACERABBIT_BUILD_EXAMPLES)
   add_executable(
     spacerabbit_smoke_example
     examples/smoke/basic.cpp
   )
-  target_link_libraries(spacerabbit_smoke_example PRIVATE spacerabbit_shared)
+  target_link_libraries(spacerabbit_smoke_example PRIVATE spacerabbit::core)
   target_compile_features(spacerabbit_smoke_example PRIVATE cxx_std_23)
   set_target_properties(
     spacerabbit_smoke_example
@@ -342,7 +256,7 @@ if(SPACERABBIT_BUILD_EXAMPLES)
     spacerabbit_fast_swipe_example
     examples/fast_swipe.cpp
   )
-  target_link_libraries(spacerabbit_fast_swipe_example PRIVATE spacerabbit_shared)
+  target_link_libraries(spacerabbit_fast_swipe_example PRIVATE spacerabbit::core)
   target_compile_features(spacerabbit_fast_swipe_example PRIVATE cxx_std_23)
   set_target_properties(
     spacerabbit_fast_swipe_example
@@ -355,7 +269,7 @@ if(SPACERABBIT_BUILD_EXAMPLES)
     spacerabbit_fast_swipe_tap_example
     examples/fast_swipe_tap.cpp
   )
-  target_link_libraries(spacerabbit_fast_swipe_tap_example PRIVATE spacerabbit_shared)
+  target_link_libraries(spacerabbit_fast_swipe_tap_example PRIVATE spacerabbit::core)
   target_compile_features(spacerabbit_fast_swipe_tap_example PRIVATE cxx_std_23)
   set_target_properties(
     spacerabbit_fast_swipe_tap_example

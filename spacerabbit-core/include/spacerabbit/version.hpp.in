@@ -3,8 +3,6 @@
 #include <cstdint>
 #include <string_view>
 
-#include <spacerabbit/export.hpp>
-
 namespace spacerabbit {
 
 /// Major component of the library semantic version.
@@ -24,8 +22,8 @@ inline constexpr std::string_view version_full = "@SPACERABBIT_VERSION_FULL@";
 inline constexpr bool is_release_build = @SPACERABBIT_VERSION_IS_RELEASE_BUILD_LITERAL@;
 
 /// Returns the canonical semantic version string.
-SPACERABBIT_EXPORT auto version_string() noexcept -> std::string_view;
+auto version_string() noexcept -> std::string_view;
 /// Returns the semantic version plus optional development build metadata.
-SPACERABBIT_EXPORT auto version_full_string() noexcept -> std::string_view;
+auto version_full_string() noexcept -> std::string_view;
 
 }  // namespace spacerabbit

@@ -41,7 +41,7 @@ spacerabbit_add_gtest(
   unit
   library_tests.cpp
 )
-target_link_libraries(spacerabbit_library_tests PRIVATE spacerabbit_static)
+target_link_libraries(spacerabbit_library_tests PRIVATE spacerabbit::core)
 
 spacerabbit_add_gtest(
   spacerabbit_ax_tests
@@ -51,7 +51,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_ax_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -62,7 +62,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_cgs_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -73,7 +73,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_cf_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -84,7 +84,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_cg_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -95,7 +95,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_gesture_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -106,7 +106,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_dispatch_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -117,7 +117,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_ns_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -128,7 +128,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_settings_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -139,7 +139,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_control_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 spacerabbit_add_gtest(
@@ -150,7 +150,7 @@ spacerabbit_add_gtest(
 target_link_libraries(
   spacerabbit_daemon_tests
   PRIVATE
-    spacerabbit_static
+    spacerabbit::core
 )
 
 if(SPACERABBIT_ENABLE_LIVE_SYSTEM_TESTS)
@@ -162,43 +162,9 @@ if(SPACERABBIT_ENABLE_LIVE_SYSTEM_TESTS)
   target_link_libraries(
     spacerabbit_live_system_tests
     PRIVATE
-      spacerabbit_static
+      spacerabbit::core
   )
 endif()
-
-add_test(
-  NAME package_static
-  COMMAND
-    "${CMAKE_COMMAND}"
-    -Dsource_binary_dir=${PROJECT_BINARY_DIR}
-    -Dconsumer_source_dir=${PROJECT_SOURCE_DIR}/tests/package_consumer
-    -Dconsumer_binary_dir=${PROJECT_BINARY_DIR}/tests/package_static
-    -Dinstall_prefix=${PROJECT_BINARY_DIR}/package-static
-    -Dlink_target=spacerabbit_static
-    -Denable_coverage=${SPACERABBIT_ENABLE_COVERAGE}
-    -Dgenerator=${CMAKE_GENERATOR}
-    -Dbuild_type=$<CONFIG>
-    -P
-    ${PROJECT_SOURCE_DIR}/tests/run_package_test.cmake
-)
-set_tests_properties(package_static PROPERTIES LABELS "package")
-
-add_test(
-  NAME package_shared
-  COMMAND
-    "${CMAKE_COMMAND}"
-    -Dsource_binary_dir=${PROJECT_BINARY_DIR}
-    -Dconsumer_source_dir=${PROJECT_SOURCE_DIR}/tests/package_consumer
-    -Dconsumer_binary_dir=${PROJECT_BINARY_DIR}/tests/package_shared
-    -Dinstall_prefix=${PROJECT_BINARY_DIR}/package-shared
-    -Dlink_target=spacerabbit_shared
-    -Denable_coverage=${SPACERABBIT_ENABLE_COVERAGE}
-    -Dgenerator=${CMAKE_GENERATOR}
-    -Dbuild_type=$<CONFIG>
-    -P
-    ${PROJECT_SOURCE_DIR}/tests/run_package_test.cmake
-)
-set_tests_properties(package_shared PROPERTIES LABELS "package")
 
 if(SPACERABBIT_ENABLE_COVERAGE)
   execute_process(

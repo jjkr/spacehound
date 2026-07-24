@@ -99,8 +99,6 @@ targets:
           #include <cstdint>
           #include <string_view>
 
-          #include <spacerabbit/export.hpp>
-
           namespace spacerabbit {
 
           inline constexpr std::uint32_t version_major = ${major};
@@ -111,8 +109,8 @@ targets:
           inline constexpr std::string_view version_full = "${marketing_version}";
           inline constexpr bool is_release_build = ${release_build_literal};
 
-          SPACERABBIT_EXPORT auto version_string() noexcept -> std::string_view;
-          SPACERABBIT_EXPORT auto version_full_string() noexcept -> std::string_view;
+          auto version_string() noexcept -> std::string_view;
+          auto version_full_string() noexcept -> std::string_view;
 
           }  // namespace spacerabbit
           EOF

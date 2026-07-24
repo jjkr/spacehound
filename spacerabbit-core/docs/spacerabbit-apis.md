@@ -9,7 +9,7 @@ This document inventories the macOS APIs used by SpaceRabbit, based on the curre
 Scope notes:
 
 - This document focuses on the app's current runtime/backend code paths.
-- It excludes `examples/` and older design notes, except where behavior has since been promoted into the public `spacerabbit` C++ library surface.
+- It excludes `examples/` and older design notes, except where behavior has since been promoted into the internal `spacerabbit` C++ runtime surface.
 - Where the codebase contains extra wrappers that are compiled but not used by the normal app flow, those are called out separately.
 
 ## High-Level Summary
@@ -25,7 +25,7 @@ The app uses both public and private macOS APIs:
 
 - Public APIs: Accessibility (`AX*`), AppKit (`NSWorkspace`, `NSRunningApplication`, `NSScreen`), Core Graphics (`CG*`), Core Foundation (`CF*`), and Grand Central Dispatch.
 - Private/undocumented APIs: CGS/SkyLight Space APIs and private `CGEvent` gesture fields. These are central to how SpaceRabbit switches Spaces quickly.
-- In this repo, the C++ library now exposes synthetic gesture construction and posting through `spacerabbit::gesture`, built on those same private `CGEvent` fields.
+- In this repo, the C++ runtime exposes synthetic gesture construction and posting through `spacerabbit::gesture`, built on those same private `CGEvent` fields.
 
 ## Framework Overview
 

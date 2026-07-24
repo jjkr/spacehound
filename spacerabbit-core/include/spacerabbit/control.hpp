@@ -5,8 +5,6 @@
 #include <string>
 #include <variant>
 
-#include <spacerabbit/export.hpp>
-
 namespace spacerabbit::control {
 
 enum class error_code {
@@ -76,7 +74,7 @@ struct window_focus_request final {
 using request =
     std::variant<workspace_request, display_request, system_ui_request, window_focus_request>;
 
-[[nodiscard]] SPACERABBIT_EXPORT auto execute(const request &request)
+[[nodiscard]] auto execute(const request &request)
     -> std::expected<void, error>;
 
 }  // namespace spacerabbit::control

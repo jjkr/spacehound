@@ -7,8 +7,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <spacerabbit/export.hpp>
-
 namespace spacerabbit::settings {
 
 struct hotkey_setting final {
@@ -49,10 +47,10 @@ struct error final {
   [[nodiscard]] auto operator==(const error &) const -> bool = default;
 };
 
-[[nodiscard]] SPACERABBIT_EXPORT auto load(const std::filesystem::path &path)
+[[nodiscard]] auto load(const std::filesystem::path &path)
     -> std::expected<document, error>;
 
-[[nodiscard]] SPACERABBIT_EXPORT auto default_path()
+[[nodiscard]] auto default_path()
     -> std::expected<std::filesystem::path, error>;
 
 }  // namespace spacerabbit::settings

@@ -14,6 +14,10 @@ target compiles the core sources into the main app process, generates
 `spacerabbit/version.hpp` during the build, and uses a vendored
 `nlohmann/json.hpp` header from this repo.
 
+The CMake project builds those sources only as an internal static target for
+tests and examples. It does not build or install a shared library, so the app
+has no separate core binary or public C++ ABI to version.
+
 Key source files:
 
 - `SpaceRabbitApp/Sources/AppDelegate.m` — menu bar item, accessibility

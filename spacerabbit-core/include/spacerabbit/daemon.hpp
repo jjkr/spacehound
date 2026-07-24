@@ -6,8 +6,6 @@
 #include <optional>
 #include <string>
 
-#include <spacerabbit/export.hpp>
-
 namespace spacerabbit::daemon {
 
 enum class error_code {
@@ -47,7 +45,7 @@ struct options final {
   observer observer{};
 };
 
-class SPACERABBIT_EXPORT runtime final {
+class runtime final {
  public:
   runtime() noexcept;
   runtime(runtime &&other) noexcept;

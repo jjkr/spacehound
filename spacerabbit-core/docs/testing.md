@@ -1,7 +1,8 @@
 # Testing
 
 SpaceRabbit uses GoogleTest for in-tree unit tests and CTest for test orchestration.
-The installed-package consumer checks remain standalone CMake/CTest integration tests.
+The CMake build produces an internal static runtime target for tests and examples;
+it does not install or export a standalone library package.
 
 ## Debug Test Workflow
 
@@ -21,7 +22,6 @@ Useful focused runs:
 
 ```sh
 ctest --test-dir build/ninja-debug -L unit --output-on-failure
-ctest --test-dir build/ninja-debug -L package --output-on-failure
 ```
 
 ## Coverage Workflow
