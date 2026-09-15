@@ -6,7 +6,6 @@
 
 <p align="center">Fast workspace navigation for macOS.</p>
 
----
 
 SpaceHound lives in your menu bar and makes moving between macOS Spaces (desktops)
 and displays instant. Jump straight to a numbered Space, step left or right, move
