@@ -577,6 +577,13 @@ inline void post_tap_event(CGEventTapProxy proxy, event_view value) noexcept {
   return CGWarpMouseCursorPosition(position);
 }
 
+/// Returns how many events of `type` the HID system state has seen, via
+/// `CGEventSourceCounterForEventType`. Events posted to the HID tap count once
+/// the window server has applied them, so a change means "processed".
+[[nodiscard]] inline auto hid_event_count(CGEventType type) noexcept -> std::uint32_t {
+  return CGEventSourceCounterForEventType(kCGEventSourceStateHIDSystemState, type);
+}
+
 /// Fills the current active-display list via `CGGetActiveDisplayList`.
 inline auto active_displays(std::vector<CGDirectDisplayID> &displays) noexcept -> CGError {
   constexpr std::uint32_t buffer_size = 32;

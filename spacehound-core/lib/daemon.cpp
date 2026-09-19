@@ -564,10 +564,32 @@ auto hotkey_matches(const detail::compiled_hotkey &hotkey, cg::event_view event)
   return normalized_flags(event.flags()) == hotkey.modifier_flags;
 }
 
-auto execute_hotkey(
-    runtime_context &context,
-    const detail::compiled_hotkey &hotkey) -> std::expected<void, control::error> {
-  return control::detail::execute_request(hotkey.request, context.synthetic_source.view());
+struct deferred_action final {
+  control::request request;
+};
+
+void run_deferred_action(void *raw_action) {
+  const std::unique_ptr<deferred_action> action{static_cast<deferred_action *>(raw_action)};
+
+  // A fresh source rather than the runtime's: nothing here may outlive it.
+  auto source = cg::event_source::create(kCGEventSourceStateHIDSystemState);
+  if (!source) {
+    os_log_error(diagnostics::navigation_log(),
+                 "Action execution failed (code=event-source-unavailable)");
+    return;
+  }
+  source.set_user_data(detail::synthetic_event_marker);
+
+  (void)control::detail::execute_request(action->request, source.view());
+}
+
+// Hotkey actions run on the main queue *after* the tap callback returns. While
+// the callback is held, the WindowServer's event thread is blocked waiting on
+// it, so events posted from inside it are not processed until we return and
+// anything that waits for their effect (cursor position, app activation)
+// misreads or times out.
+void execute_hotkey(const detail::compiled_hotkey &hotkey) {
+  dispatch::to_main(run_deferred_action, new deferred_action{.request = hotkey.request});
 }
 
 auto compile_fast_swipe_replay(
@@ -690,7 +712,7 @@ auto initialize_runtime(
                 continue;
               }
 
-              (void)execute_hotkey(*context, hotkey);
+              execute_hotkey(hotkey);
               return nullptr;
             }
 

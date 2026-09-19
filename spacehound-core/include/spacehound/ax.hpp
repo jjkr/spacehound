@@ -35,6 +35,9 @@ inline const auto children_attribute = cf::string_view{kAXChildrenAttribute};
 inline const auto selected_children_attribute =
     cf::string_view{kAXSelectedChildrenAttribute};
 inline const auto identifier_attribute = cf::string_view{kAXIdentifierAttribute};
+inline const auto focused_application_attribute =
+    cf::string_view{kAXFocusedApplicationAttribute};
+inline const auto menu_bar_attribute = cf::string_view{kAXMenuBarAttribute};
 inline const auto raise_action = cf::string_view{kAXRaiseAction};
 
 /// Returns whether the current process is trusted for Accessibility access.
@@ -274,6 +277,11 @@ class ui_element final {
   /// Creates an AX application element with `AXUIElementCreateApplication`.
   [[nodiscard]] static auto create_application(pid_t pid) noexcept -> ui_element {
     return adopt(AXUIElementCreateApplication(pid));
+  }
+
+  /// Creates the system-wide AX element with `AXUIElementCreateSystemWide`.
+  [[nodiscard]] static auto create_system_wide() noexcept -> ui_element {
+    return adopt(AXUIElementCreateSystemWide());
   }
 
   /// Returns the wrapped raw AX UI element reference.

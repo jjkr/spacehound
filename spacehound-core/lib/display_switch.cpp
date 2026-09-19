@@ -359,38 +359,101 @@ auto find_window_index_by_id(
   return std::nullopt;
 }
 
-auto post_menu_bar_click(cg::event_source_view synthetic_source, CGRect target_bounds) -> bool {
-  const auto point = CGPoint{
-      .x = target_bounds.origin.x + target_bounds.size.width / 2.0,
-      .y = target_bounds.origin.y + 10.0,
-  };
+// The frontmost app's rightmost menu title, in global (top-left origin)
+// coordinates on whichever display currently shows the active menu bar.
+auto last_menu_title_frame() -> std::optional<CGRect> {
+  const auto system_wide = ax::ui_element::create_system_wide();
+  if (!system_wide) {
+    return std::nullopt;
+  }
 
-  auto move_event =
-      cg::event::create_mouse(synthetic_source, kCGEventMouseMoved, point, kCGMouseButtonLeft);
-  if (!move_event) {
+  cf::type application_value;
+  if (system_wide.copy_attribute_value(ax::focused_application_attribute, application_value) !=
+          kAXErrorSuccess ||
+      !application_value) {
+    return std::nullopt;
+  }
+  const auto application = application_value.cast<AXUIElementRef>();
+  if (!application) {
+    return std::nullopt;
+  }
+
+  cf::type menu_bar_value;
+  if (ax::ui_element_view{application}.copy_attribute_value(ax::menu_bar_attribute, menu_bar_value) !=
+          kAXErrorSuccess ||
+      !menu_bar_value) {
+    return std::nullopt;
+  }
+  const auto menu_bar = menu_bar_value.cast<AXUIElementRef>();
+  if (!menu_bar) {
+    return std::nullopt;
+  }
+
+  cf::type children_value;
+  if (ax::ui_element_view{menu_bar}.copy_attribute_value(ax::children_attribute, children_value) !=
+          kAXErrorSuccess ||
+      !children_value) {
+    return std::nullopt;
+  }
+  const auto children = children_value.cast<CFArrayRef>();
+  if (!children) {
+    return std::nullopt;
+  }
+
+  const auto count = CFArrayGetCount(children.get());
+  for (CFIndex index = count - 1; index >= 0; --index) {
+    const auto item = cf::array_at<AXUIElementRef>(children, index);
+    if (!item) {
+      continue;
+    }
+
+    CGRect frame{};
+    if (ax_window_bounds(ax::ui_element_view{item}, frame) && frame.size.width > 0.0) {
+      return frame;
+    }
+  }
+
+  return std::nullopt;
+}
+
+// Activates a display by clicking `point` on it. Posted mouse events move the
+// cursor, and hiding it does not survive them, so the hop is kept below a
+// frame instead: warp there synchronously, post the click, wait until the
+// window server reports the mouse-up as applied, and warp straight back.
+auto activate_display_with_click(cg::event_source_view synthetic_source, CGPoint point) -> bool {
+  const auto cursor_event = cg::event::create(synthetic_source);
+  if (!cursor_event) {
     return false;
   }
-  move_event.post(kCGHIDEventTap);
-
-  std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  const auto original = cursor_event.location();
 
   auto down_event =
       cg::event::create_mouse(synthetic_source, kCGEventLeftMouseDown, point, kCGMouseButtonLeft);
-  if (!down_event) {
+  auto up_event =
+      cg::event::create_mouse(synthetic_source, kCGEventLeftMouseUp, point, kCGMouseButtonLeft);
+  if (!down_event || !up_event) {
     return false;
   }
   down_event.set_flags(0);
-  down_event.post(kCGHIDEventTap);
+  up_event.set_flags(0);
 
-  auto up_event =
-      cg::event::create_mouse(synthetic_source, kCGEventLeftMouseUp, point, kCGMouseButtonLeft);
-  if (!up_event) {
+  const auto ups_before = cg::hid_event_count(kCGEventLeftMouseUp);
+  if (cg::warp_mouse_cursor_position(point) != kCGErrorSuccess) {
     return false;
   }
-  up_event.set_flags(0);
+  down_event.post(kCGHIDEventTap);
   up_event.post(kCGHIDEventTap);
 
-  return true;
+  // Leave only once the up has been applied; otherwise it would drag the
+  // cursor back to `point` after we return it.
+  using namespace std::chrono_literals;
+  const auto deadline = std::chrono::steady_clock::now() + 50ms;
+  while (cg::hid_event_count(kCGEventLeftMouseUp) == ups_before &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(1ms);
+  }
+
+  return cg::warp_mouse_cursor_position(original) == kCGErrorSuccess;
 }
 
 }  // namespace
@@ -511,6 +574,27 @@ auto plan_display_request(
   }
 
   return {};
+}
+
+auto menu_bar_click_point(
+    CGRect target_bounds,
+    std::optional<CGRect> last_title_frame,
+    CGRect title_display_bounds) noexcept -> CGPoint {
+  constexpr auto margin = 12.0;
+  const auto y = target_bounds.origin.y + 10.0;
+
+  if (last_title_frame) {
+    const auto title_max_x = last_title_frame->origin.x + last_title_frame->size.width;
+    const auto x = target_bounds.origin.x + (title_max_x - title_display_bounds.origin.x) + margin;
+    if (x <= target_bounds.origin.x + target_bounds.size.width - margin) {
+      return CGPoint{.x = x, .y = y};
+    }
+  }
+
+  return CGPoint{
+      .x = target_bounds.origin.x + target_bounds.size.width / 2.0,
+      .y = y,
+  };
 }
 
 auto cursor_anchor_point(CGRect display_bounds) noexcept -> CGPoint {
@@ -676,22 +760,20 @@ auto execute_display_request(
     return std::unexpected(runtime_error("Failed to focus a window on the target display."));
   }
 
-  // An empty display can only be activated by clicking it, which moves the
-  // cursor. When the cursor should stay put, remember where it was and put it
-  // back afterwards.
-  std::optional<CGPoint> restore_point;
-  if (!request.move_cursor_to_target_display) {
-    if (const auto cursor_event = cg::event::create(synthetic_source)) {
-      restore_point = cursor_event.location();
+  // Nothing to focus: an empty display can only be activated by clicking it.
+  // Aim for the empty menu-bar strip right of the app's last menu title.
+  const auto title_frame = last_menu_title_frame();
+  CGRect title_display_bounds = target_display.bounds;
+  if (title_frame) {
+    if (const auto index = find_display_index_containing_point(displays, title_frame->origin)) {
+      title_display_bounds = displays[*index].bounds;
     }
   }
 
-  if (!post_menu_bar_click(synthetic_source, target_display.bounds)) {
+  const auto click_point =
+      menu_bar_click_point(target_display.bounds, title_frame, title_display_bounds);
+  if (!activate_display_with_click(synthetic_source, click_point)) {
     return std::unexpected(runtime_error("Failed to post a fallback menu-bar click."));
-  }
-
-  if (restore_point && cg::warp_mouse_cursor_position(*restore_point) != kCGErrorSuccess) {
-    return std::unexpected(runtime_error("Failed to restore the cursor position."));
   }
 
   return {};
