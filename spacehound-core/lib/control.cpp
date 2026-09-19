@@ -187,6 +187,50 @@ auto space_bounds_for_display(
   return false;
 }
 
+// The managed space id at `index` in the space list of the display with the
+// given Spaces identifier.
+auto space_id_at_index(
+    cf::string_view display_identifier,
+    std::int64_t index) -> std::optional<std::int64_t> {
+  const auto connection = cgs::main_connection_id();
+  const auto managed_spaces = cgs::copy_managed_display_spaces(connection);
+  if (!managed_spaces || index < 0) {
+    return std::nullopt;
+  }
+
+  const auto managed_spaces_view = cf::view<CFArrayRef>{managed_spaces.get()};
+  const auto display_count = CFArrayGetCount(managed_spaces_view.get());
+  for (CFIndex display_index = 0; display_index < display_count; ++display_index) {
+    const auto display_dict_ref =
+        cf::array_at<CFDictionaryRef>(managed_spaces_view, display_index);
+    if (!display_dict_ref) {
+      continue;
+    }
+
+    const auto display_dict = cf::dictionary_view{display_dict_ref};
+    const auto entry_identifier = display_dict.find<CFStringRef>(display_identifier_key);
+    if (!entry_identifier || !display_identifier.equals(cf::string_view{entry_identifier})) {
+      continue;
+    }
+
+    const auto spaces = display_dict.find<CFArrayRef>(spaces_key);
+    if (!spaces || index >= CFArrayGetCount(spaces.get())) {
+      return std::nullopt;
+    }
+
+    const auto space_dict_ref = cf::array_at<CFDictionaryRef>(spaces, static_cast<CFIndex>(index));
+    std::int64_t space_id = 0;
+    if (!space_dict_ref ||
+        !dictionary_number_int64(cf::dictionary_view{space_dict_ref}, managed_space_id_key, space_id)) {
+      return std::nullopt;
+    }
+
+    return space_id;
+  }
+
+  return std::nullopt;
+}
+
 // The display a workspace request operates on: its Spaces identifier plus, when
 // it is not the display under the cursor, a point on it to report the gesture
 // at. `gesture_location` stays empty in unified-spaces mode and when the
@@ -195,6 +239,7 @@ auto space_bounds_for_display(
 struct workspace_display final {
   cf::string identifier;
   std::optional<CGPoint> gesture_location;
+  std::optional<detail::display_record> record;  // set when a display was resolved
 };
 
 enum class workspace_display_error {
@@ -204,8 +249,27 @@ enum class workspace_display_error {
 
 auto resolve_workspace_display(
     const workspace_request &request,
-    cg::event_source_view synthetic_source)
+    cg::event_source_view synthetic_source,
+    bool overlay_showing)
     -> std::expected<workspace_display, workspace_display_error> {
+  // Under an overlay the cycle session says which display we are on (the
+  // menu bar does not follow the highlight); the gesture must land there.
+  if (overlay_showing) {
+    std::vector<detail::display_record> displays;
+    if (detail::load_active_displays(displays)) {
+      if (const auto index = detail::overlay_display(synthetic_source, std::span{displays})) {
+        const auto &display = displays[*index];
+        if (auto identifier = cf::string::from_utf8(display.uuid)) {
+          return workspace_display{
+              .identifier = std::move(identifier),
+              .gesture_location = rect_center(display.bounds),
+              .record = display,
+          };
+        }
+      }
+    }
+  }
+
   const auto active_display_utf8 = detail::active_display_identifier();
   if (!active_display_utf8) {
     return std::unexpected(workspace_display_error::active_display_unavailable);
@@ -288,7 +352,8 @@ auto execute_workspace_request(
     return std::unexpected(invalid_request_error("Workspace indices are 1-based."));
   }
 
-  const auto display = resolve_workspace_display(request, synthetic_source);
+  const bool overlay_showing = detail::overlay_is_showing();
+  const auto display = resolve_workspace_display(request, synthetic_source, overlay_showing);
   if (!display) {
     switch (display.error()) {
       case workspace_display_error::active_display_unavailable:
@@ -303,16 +368,47 @@ auto execute_workspace_request(
     return std::unexpected(state_error("Failed to determine the display workspace state."));
   }
 
-  const auto motion =
-      detail::plan_workspace_request(request, bounds.current_index, bounds.num_spaces);
+  std::optional<detail::dock_view_state> overlay_state;
+  if (overlay_showing) {
+    const auto dock = detail::dock_pid();
+    overlay_state = dock ? detail::detect_dock_view_state(*dock) : std::nullopt;
+  }
+
+  // In App Exposé a horizontal swipe switches between apps, not spaces, so
+  // left/right always swipe once; the space boundaries do not apply.
+  auto motion = detail::plan_workspace_request(request, bounds.current_index, bounds.num_spaces);
+  if (overlay_state == detail::dock_view_state::expose &&
+      (request.action == workspace_action::left || request.action == workspace_action::right)) {
+    motion = detail::workspace_motion{
+        .should_execute = true,
+        .direction = request.action == workspace_action::left ? gesture::direction::left
+                                                              : gesture::direction::right,
+        .repeat_count = 1,
+    };
+  }
   if (!motion.should_execute) {
     return {};
+  }
+
+  // Inside Mission Control the swipe switches the shown space: once it is
+  // there, highlight its frontmost window.
+  std::optional<std::int64_t> target_space_id;
+  if (overlay_state == detail::dock_view_state::mission_control && display->record) {
+    const auto steps = static_cast<std::int64_t>(motion.repeat_count);
+    const auto target_index = motion.direction == gesture::direction::left
+                                  ? bounds.current_index - steps
+                                  : bounds.current_index + steps;
+    target_space_id = space_id_at_index(display->identifier.view(), target_index);
   }
 
   const gesture::swipe_options swipe_options{.location = display->gesture_location};
   if (!post_swipe_sequence(
           synthetic_source, motion.direction, motion.repeat_count, swipe_options)) {
     return std::unexpected(runtime_error("Failed to synthesize the workspace gesture sequence."));
+  }
+
+  if (target_space_id) {
+    detail::highlight_frontmost_window_when_space_appears(*display->record, *target_space_id);
   }
 
   return {};

@@ -151,6 +151,19 @@ auto workspace::shared() noexcept -> workspace {
   return workspace{retain_object([NSWorkspace sharedWorkspace])};
 }
 
+auto workspace::frontmost_application_pid() const noexcept -> std::optional<pid_t> {
+  if (object_ == nullptr) {
+    return std::nullopt;
+  }
+
+  NSRunningApplication *application = [cast_object<NSWorkspace>(object_) frontmostApplication];
+  if (application == nil) {
+    return std::nullopt;
+  }
+
+  return application.processIdentifier;
+}
+
 auto workspace::notification_center() const noexcept -> class notification_center {
   if (object_ == nullptr) {
     return {};

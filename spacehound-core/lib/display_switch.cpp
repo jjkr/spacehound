@@ -138,6 +138,19 @@ auto dictionary_bool(
   return default_value;
 }
 
+auto dictionary_double(
+    cf::dictionary_view dictionary,
+    cf::string_view key,
+    double default_value) noexcept -> double {
+  const auto number = dictionary.find<CFNumberRef>(key);
+  if (!number) {
+    return default_value;
+  }
+
+  double value = default_value;
+  return CFNumberGetValue(number.get(), kCFNumberDoubleType, &value) != 0 ? value : default_value;
+}
+
 auto dictionary_rect(
     cf::dictionary_view dictionary,
     cf::string_view key,
@@ -474,6 +487,7 @@ auto load_on_screen_windows(std::vector<window_record> &out_windows) -> bool {
         .layer = layer,
         .bounds = bounds,
         .is_onscreen = dictionary_bool(window_dict, cg::window_is_onscreen_key, true),
+        .alpha = dictionary_double(window_dict, cg::window_alpha_key, 1.0),
     });
   }
 
@@ -806,30 +820,45 @@ auto execute_display_request(
     return {};
   }
 
+  // With Mission Control or App Exposé showing, the switch moves the overlay
+  // highlight to the target display's frontmost thumbnail; the session (not
+  // the menu bar) then says which display we are on.
+  const bool overlay = overlay_is_showing();
+  const auto current_index = overlay ? overlay_display(synthetic_source, std::span{displays})
+                                     : std::nullopt;
   const auto active_display_uuid = load_active_display_uuid();
-  if (!active_display_uuid) {
+  if (!current_index && !active_display_uuid) {
     return std::unexpected(state_error("Failed to determine the active display."));
   }
 
-  const auto current_index = find_current_display_index(displays, *active_display_uuid);
-  if (!current_index) {
+  const auto resolved_index = current_index ? current_index
+                                            : find_current_display_index(displays, *active_display_uuid);
+  if (!resolved_index) {
     return std::unexpected(state_error("Failed to match the active display."));
   }
 
-  const auto plan = plan_display_request(request, *current_index, displays.size());
+  const auto plan = plan_display_request(request, *resolved_index, displays.size());
   if (!plan.should_execute) {
     return {};
-  }
-
-  std::vector<window_record> windows;
-  if (!load_on_screen_windows(windows)) {
-    return std::unexpected(runtime_error("Failed to enumerate on-screen windows."));
   }
 
   const auto &target_display = displays[plan.target_index];
   if (request.move_cursor_to_target_display &&
       !ensure_cursor_on_display(synthetic_source, target_display.bounds)) {
     return std::unexpected(runtime_error("Failed to move the cursor to the target display."));
+  }
+
+  if (overlay) {
+    const auto result = highlight_frontmost_on_display(synthetic_source, target_display);
+    os_log_info(diagnostics::navigation_log(),
+                "Display switch moved the overlay highlight (total=%{public}lldms)",
+                static_cast<long long>(elapsed_ms()));
+    return result;
+  }
+
+  std::vector<window_record> windows;
+  if (!load_on_screen_windows(windows)) {
+    return std::unexpected(runtime_error("Failed to enumerate on-screen windows."));
   }
 
   const auto target_window_index =
@@ -875,6 +904,17 @@ auto execute_window_focus_request(
     return std::unexpected(state_error("Failed to enumerate active displays."));
   }
 
+  // With Mission Control or App Exposé showing, cycle the overlay's hover
+  // highlight between thumbnails instead of focusing windows, on the display
+  // the overlay session is on.
+  if (overlay_is_showing()) {
+    const auto overlay_index = overlay_display(synthetic_source, std::span{displays});
+    if (!overlay_index) {
+      return std::unexpected(state_error("Failed to determine the overlay display."));
+    }
+    return execute_thumbnail_cycle_request(request, synthetic_source, displays[*overlay_index]);
+  }
+
   const auto active_display_uuid = load_active_display_uuid();
   if (!active_display_uuid) {
     return std::unexpected(state_error("Failed to determine the active display."));
@@ -883,21 +923,6 @@ auto execute_window_focus_request(
   const auto current_index = find_current_display_index(displays, *active_display_uuid);
   if (!current_index) {
     return std::unexpected(state_error("Failed to match the active display."));
-  }
-
-  // With Mission Control or App Exposé showing, cycle the overlay's hover
-  // highlight between thumbnails instead of focusing windows.
-  const auto detect_started_at = std::chrono::steady_clock::now();
-  const auto dock = dock_pid();
-  const auto dock_state = dock ? detect_dock_view_state(*dock) : std::nullopt;
-  os_log_debug(diagnostics::navigation_log(),
-               "Window cycle inspected the Dock (state=%{public}s detect=%{public}lldms)",
-               dock_state ? dock_view_state_name(*dock_state).data() : "unknown",
-               static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                          std::chrono::steady_clock::now() - detect_started_at)
-                                          .count()));
-  if (dock_state && *dock_state != dock_view_state::hidden) {
-    return execute_thumbnail_cycle_request(request, synthetic_source, displays[*current_index]);
   }
 
   std::vector<window_record> windows;

@@ -2,26 +2,25 @@
 // focusing windows, move the overlay's hover highlight between thumbnails.
 //
 // Findings the code below relies on (macOS 26, see examples/mc_probe.cpp):
-// - The Dock's "mc" / "appexpose" groups are stubs with no children; the real
-//   tree belongs to the WindowManager process:
-//     AXApplication "WindowManager"
-//       AXGroup id="mc.display" | "appexpose.display"  (AXFrame = display
-//                bounds, AXDisplayID = CGDirectDisplayID; one per display)
-//         AXButton id="<bundle>.space.<ManagedSpaceID>" (Mission Control) or
-//                  id="<bundle>" (App Exposé): title, AXFrame, "wid" = window id
-//         AXGroup id="mc.spaces" ... (the spaces bar; its buttons have no "wid")
-// - In Mission Control each display group lists thumbnails of every space on
-//   that display; only those on the display's current space are visible.
+// - While an overlay shows, the window list (`CGWindowListCopyWindowInfo`,
+//   on-screen only) reports each app window at its *thumbnail* bounds, on
+//   every display, in front-to-back order. That is the thumbnail enumeration.
+// - WindowManager owns the overlay: a display-sized window above the normal
+//   layers per display while an overlay shows (`overlay_is_showing`), and an
+//   accessibility tree ("mc.display" / "appexpose.display" groups of buttons
+//   with a "wid") that App Exposé only builds for one display, hence not
+//   relied on here. The Dock's "mc" / "appexpose" groups are stubs that tell
+//   Mission Control from App Exposé (`detect_dock_view_state`).
 // - The highlight follows the real cursor: a mouse-moved posted to the
 //   WindowManager pid does nothing, one posted through the HID tap works, and
 //   the highlight stays after the cursor is warped away again.
+// - Dismissing the overlay activates the thumbnail under the cursor.
 
 #include "internal/control_internal.hpp"
 #include "internal/daemon_internal.hpp"
 #include "internal/logging.hpp"
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 #include <chrono>
 #include <cstdint>
@@ -35,21 +34,21 @@
 #include <utility>
 #include <vector>
 
-#include <spacehound/ax.hpp>
 #include <spacehound/cf.hpp>
 #include <spacehound/cg.hpp>
 #include <spacehound/cgs.hpp>
 #include <spacehound/dispatch.hpp>
+#include <spacehound/ns.hpp>
 
 namespace spacehound::control::detail {
 namespace {
 
-namespace ax = spacehound::ax;
 namespace cf = spacehound::cf;
 namespace cg = spacehound::cg;
 namespace cgs = spacehound::cgs;
 namespace diagnostics = spacehound::diagnostics;
 namespace dispatch = spacehound::dispatch;
+namespace ns = spacehound::ns;
 
 // A hover session outlives the focus-cycle one: the highlight stays until
 // the mouse moves, which the state tracks, so the timeout is only a backstop
@@ -59,16 +58,12 @@ constexpr auto cursor_still_tolerance = 1.0;
 // The overlay's appear animation: poll this often, give up after this long.
 constexpr long long overlay_poll_interval_ms = 40;
 constexpr long long overlay_poll_timeout_ms = 1500;
-constexpr std::size_t max_tree_depth = 4;
 constexpr auto display_frame_tolerance = 1.0;
-constexpr auto thumbnail_space_marker = std::string_view{".space."};
+constexpr std::string_view window_manager_owner_name = "WindowManager";
 
 inline const auto display_identifier_key = cf::string_view{CFSTR("Display Identifier")};
 inline const auto current_space_key = cf::string_view{CFSTR("Current Space")};
 inline const auto managed_space_id_key = cf::string_view{CFSTR("ManagedSpaceID")};
-inline const auto display_id_attribute = cf::string_view{CFSTR("AXDisplayID")};
-inline const auto window_id_attribute = cf::string_view{CFSTR("wid")};
-constexpr std::string_view display_group_identifiers[] = {"mc.display", "appexpose.display"};
 
 std::mutex thumbnail_cycle_state_mutex;
 std::optional<thumbnail_cycle_state> thumbnail_cycle_state_cache;
@@ -104,153 +99,6 @@ auto rects_match(CGRect lhs, CGRect rhs) noexcept -> bool {
          std::fabs(lhs.size.height - rhs.size.height) <= display_frame_tolerance;
 }
 
-auto ax_string(ax::ui_element_view element, cf::string_view attribute) -> std::optional<std::string> {
-  cf::type value;
-  if (element.copy_attribute_value(attribute, value) != kAXErrorSuccess || !value) {
-    return std::nullopt;
-  }
-
-  const auto string = value.cast<CFStringRef>();
-  if (!string) {
-    return std::nullopt;
-  }
-
-  return cf::string_view{string}.to_utf8();
-}
-
-auto ax_int64(ax::ui_element_view element, cf::string_view attribute) -> std::optional<std::int64_t> {
-  cf::type value;
-  if (element.copy_attribute_value(attribute, value) != kAXErrorSuccess || !value) {
-    return std::nullopt;
-  }
-
-  const auto number = value.cast<CFNumberRef>();
-  if (!number) {
-    return std::nullopt;
-  }
-
-  std::int64_t result = 0;
-  if (CFNumberGetValue(number.get(), kCFNumberSInt64Type, &result) == 0) {
-    return std::nullopt;
-  }
-
-  return result;
-}
-
-auto ax_frame(ax::ui_element_view element) -> std::optional<CGRect> {
-  cf::type value;
-  if (element.copy_attribute_value(ax::frame_attribute, value) != kAXErrorSuccess || !value) {
-    return std::nullopt;
-  }
-
-  const auto ax_value = value.cast<AXValueRef>();
-  CGRect frame{};
-  if (!ax_value || !ax::value_view{ax_value.get()}.get_value(frame)) {
-    return std::nullopt;
-  }
-
-  return frame;
-}
-
-auto ax_children(ax::ui_element_view element) -> cf::type {
-  cf::type value;
-  if (element.copy_attribute_value(ax::children_attribute, value) != kAXErrorSuccess) {
-    return {};
-  }
-
-  return value;
-}
-
-// Calls `visit(child)` for each AX child of `element`; stops early when
-// `visit` returns false.
-template <typename Visit>
-void for_each_child(ax::ui_element_view element, Visit &&visit) {
-  const auto value = ax_children(element);
-  const auto children = value ? value.cast<CFArrayRef>() : cf::view<CFArrayRef>{};
-  if (!children) {
-    return;
-  }
-
-  const auto count = CFArrayGetCount(children.get());
-  for (CFIndex index = 0; index < count; ++index) {
-    const auto child = cf::array_at<AXUIElementRef>(children, index);
-    if (child && !visit(ax::ui_element_view{child})) {
-      return;
-    }
-  }
-}
-
-// The display group for `display`: matched by AXDisplayID, or by frame when
-// the attribute is missing. App Exposé only has a group on the display it is
-// shown on, so when nothing matches and there is a single group, that is it.
-auto find_display_group(ax::ui_element_view window_manager, const display_record &display)
-    -> ax::ui_element {
-  ax::ui_element found;
-  ax::ui_element only_group;
-  std::size_t group_count = 0;
-  for_each_child(window_manager, [&](ax::ui_element_view child) {
-    const auto identifier = ax_string(child, ax::identifier_attribute);
-    if (!identifier || std::ranges::find(display_group_identifiers, *identifier) ==
-                           std::end(display_group_identifiers)) {
-      return true;
-    }
-
-    ++group_count;
-    only_group = ax::ui_element::retain(child);
-
-    const auto display_id = ax_int64(child, display_id_attribute);
-    const bool matches = display_id
-                             ? *display_id == static_cast<std::int64_t>(display.display_id)
-                             : ax_frame(child).transform([&](CGRect frame) {
-                                 return rects_match(frame, display.bounds);
-                               }).value_or(false);
-    if (!matches) {
-      return true;
-    }
-
-    found = ax::ui_element::retain(child);
-    return false;
-  });
-
-  if (!found && group_count == 1) {
-    return only_group;
-  }
-
-  return found;
-}
-
-// Collects the window thumbnails below `element`: the elements carrying a
-// "wid". The walk is depth-limited because the spaces bar nests a few levels.
-void collect_thumbnails(
-    ax::ui_element_view element,
-    std::size_t depth,
-    std::vector<thumbnail_record> &out_thumbnails) {
-  if (depth > max_tree_depth) {
-    return;
-  }
-
-  for_each_child(element, [&](ax::ui_element_view child) {
-    const auto window_id = ax_int64(child, window_id_attribute);
-    if (!window_id) {
-      collect_thumbnails(child, depth + 1, out_thumbnails);
-      return true;
-    }
-
-    const auto frame = ax_frame(child);
-    if (!frame || frame->size.width <= 0.0 || frame->size.height <= 0.0) {
-      return true;
-    }
-
-    const auto identifier = ax_string(child, ax::identifier_attribute);
-    out_thumbnails.push_back(thumbnail_record{
-        .window_id = static_cast<CGWindowID>(*window_id),
-        .space_id = identifier ? parse_thumbnail_space_id(*identifier).value_or(-1) : -1,
-        .frame = *frame,
-    });
-    return true;
-  });
-}
-
 auto dictionary_int64(cf::dictionary_view dictionary, cf::string_view key)
     -> std::optional<std::int64_t> {
   const auto number = dictionary.find<CFNumberRef>(key);
@@ -281,7 +129,7 @@ void for_each_window_manager_window(CGWindowListOption option, Visit &&visit) {
 
     const auto window_dict = cf::dictionary_view{window_dict_ref};
     const auto owner_name = window_dict.find<CFStringRef>(cg::window_owner_name_key);
-    if (!owner_name || cf::string_view{owner_name}.to_utf8() != "WindowManager") {
+    if (!owner_name || cf::string_view{owner_name}.to_utf8() != window_manager_owner_name) {
       continue;
     }
 
@@ -312,33 +160,9 @@ auto now_ms() -> std::uint64_t {
 
 }  // namespace
 
-auto parse_thumbnail_space_id(std::string_view identifier) noexcept
-    -> std::optional<std::int64_t> {
-  const auto marker = identifier.rfind(thumbnail_space_marker);
-  if (marker == std::string_view::npos) {
-    return std::nullopt;
-  }
-
-  const auto digits = identifier.substr(marker + thumbnail_space_marker.size());
-  std::int64_t space_id = 0;
-  const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), space_id);
-  if (error != std::errc{} || end != digits.data() + digits.size() || digits.empty()) {
-    return std::nullopt;
-  }
-
-  return space_id;
-}
-
-auto visible_thumbnails_in_reading_order(
-    std::span<const thumbnail_record> thumbnails,
-    std::int64_t space_id) -> std::vector<thumbnail_record> {
-  std::vector<thumbnail_record> visible;
-  for (const auto &thumbnail : thumbnails) {
-    if (thumbnail.space_id < 0 || thumbnail.space_id == space_id) {
-      visible.push_back(thumbnail);
-    }
-  }
-
+auto thumbnails_in_reading_order(
+    std::span<const thumbnail_record> thumbnails) -> std::vector<thumbnail_record> {
+  std::vector<thumbnail_record> visible(thumbnails.begin(), thumbnails.end());
   if (visible.empty()) {
     return visible;
   }
@@ -385,8 +209,55 @@ auto find_thumbnail_index_containing_point(
   return std::nullopt;
 }
 
+auto session_is_current(
+    const std::optional<thumbnail_cycle_state> &state,
+    std::optional<CGPoint> cursor,
+    std::uint64_t now_ms,
+    std::uint64_t timeout_ms) noexcept -> bool {
+  return state && cursor && std::fabs(cursor->x - state->cursor_x) <= cursor_still_tolerance &&
+         std::fabs(cursor->y - state->cursor_y) <= cursor_still_tolerance &&
+         now_ms >= state->last_cycle_timestamp_ms &&
+         now_ms - state->last_cycle_timestamp_ms < timeout_ms;
+}
+
+auto thumbnails_on_display(
+    std::span<const window_record> windows,
+    CGRect display_bounds,
+    std::optional<pid_t> only_pid) -> std::vector<thumbnail_record> {
+  std::vector<thumbnail_record> thumbnails;
+  for (const auto &window : windows) {
+    if ((only_pid && window.pid != *only_pid) || window.layer != 0 || !window.is_onscreen ||
+        window.alpha <= 0.0 ||
+        window.owner_name == window_manager_owner_name || window.bounds.size.width <= 0.0 ||
+        window.bounds.size.height <= 0.0 ||
+        !rect_contains_point(display_bounds, rect_center(window.bounds))) {
+      continue;
+    }
+    thumbnails.push_back(thumbnail_record{.window_id = window.window_id, .frame = window.bounds});
+  }
+
+  return thumbnails_in_reading_order(std::span{thumbnails});
+}
+
+auto frontmost_thumbnail_window(
+    std::span<const window_record> windows,
+    std::span<const thumbnail_record> thumbnails) noexcept -> std::optional<CGWindowID> {
+  for (const auto &window : windows) {
+    if (window.layer != 0 || !window.is_onscreen) {
+      continue;
+    }
+    if (std::ranges::find(thumbnails, window.window_id, &thumbnail_record::window_id) !=
+        thumbnails.end()) {
+      return window.window_id;
+    }
+  }
+
+  return std::nullopt;
+}
+
 auto plan_thumbnail_cycle(
     const control::window_focus_request &request,
+    std::string_view display_uuid,
     std::span<const thumbnail_record> thumbnails,
     const std::optional<thumbnail_cycle_state> &previous_state,
     std::optional<CGPoint> cursor,
@@ -411,13 +282,8 @@ auto plan_thumbnail_cycle(
     return std::nullopt;
   };
 
-  const bool cursor_still = previous_state && cursor &&
-                            std::fabs(cursor->x - previous_state->cursor_x) <= cursor_still_tolerance &&
-                            std::fabs(cursor->y - previous_state->cursor_y) <= cursor_still_tolerance;
-
   std::optional<std::size_t> current_index;
-  if (previous_state && cursor_still && now_ms >= previous_state->last_cycle_timestamp_ms &&
-      now_ms - previous_state->last_cycle_timestamp_ms < timeout_ms &&
+  if (session_is_current(previous_state, cursor, now_ms, timeout_ms) &&
       previous_state->current_index < previous_state->window_order.size()) {
     current_index = index_of_window(previous_state->window_order[previous_state->current_index]);
   }
@@ -438,6 +304,7 @@ auto plan_thumbnail_cycle(
 
   const auto target_center = rect_center(thumbnails[*target_index].frame);
   thumbnail_cycle_state next_state{
+      .display_uuid = std::string{display_uuid},
       .current_index = *target_index,
       .last_cycle_timestamp_ms = now_ms,
       .cursor_x = cursor ? cursor->x : 0.0,
@@ -454,17 +321,6 @@ auto plan_thumbnail_cycle(
       .target_index = *target_index,
       .next_state = std::move(next_state),
   };
-}
-
-auto window_manager_pid() -> std::optional<pid_t> {
-  std::optional<pid_t> found;
-  for_each_window_manager_window(
-      static_cast<CGWindowListOption>(kCGWindowListOptionAll),
-      [&](pid_t pid, std::int64_t, CGRect) {
-        found = pid;
-        return false;
-      });
-  return found;
 }
 
 auto overlay_is_showing() -> bool {
@@ -525,23 +381,26 @@ auto current_space_id_for_display(std::string_view display_uuid) -> std::optiona
   return std::nullopt;
 }
 
+auto overlay_app_filter() -> std::optional<pid_t> {
+  const auto dock = dock_pid();
+  const auto state = dock ? detect_dock_view_state(*dock) : std::nullopt;
+  if (state != dock_view_state::expose) {
+    return std::nullopt;
+  }
+
+  return ns::workspace::shared().frontmost_application_pid();
+}
+
 auto load_thumbnails_for_display(
-    pid_t window_manager_pid,
     const display_record &display,
+    std::optional<pid_t> only_pid,
     std::vector<thumbnail_record> &out_thumbnails) -> bool {
-  out_thumbnails.clear();
-
-  const auto window_manager = ax::ui_element::create_application(window_manager_pid);
-  if (!window_manager) {
+  std::vector<window_record> windows;
+  if (!load_on_screen_windows(windows)) {
     return false;
   }
 
-  const auto group = find_display_group(window_manager.view(), display);
-  if (!group) {
-    return false;
-  }
-
-  collect_thumbnails(group.view(), 0, out_thumbnails);
+  out_thumbnails = thumbnails_on_display(std::span{windows}, display.bounds, only_pid);
   return true;
 }
 
@@ -560,54 +419,44 @@ auto hover_thumbnail(cg::event_source_view synthetic_source, CGPoint point) -> b
 
 namespace {
 
-// Everything a hover needs about the active display's overlay.
+// Everything a hover needs about a display's overlay.
 struct overlay_snapshot final {
-  pid_t window_manager = 0;
-  std::vector<thumbnail_record> thumbnails;  // visible, reading order
+  std::vector<thumbnail_record> thumbnails;  // reading order
   std::optional<CGWindowID> frontmost_window;
 };
 
-auto load_overlay_snapshot(const display_record &display, overlay_snapshot &out)
-    -> std::expected<void, control::error> {
-  const auto pid = window_manager_pid();
-  if (!pid) {
-    return std::unexpected(state_error("Failed to find the WindowManager process."));
+auto load_overlay_snapshot(
+    const display_record &display,
+    std::optional<pid_t> only_pid,
+    overlay_snapshot &out) -> std::expected<void, control::error> {
+  std::vector<window_record> windows;
+  if (!load_on_screen_windows(windows)) {
+    return std::unexpected(state_error("Failed to enumerate on-screen windows."));
   }
 
-  const auto space_id = current_space_id_for_display(display.uuid);
-  if (!space_id) {
-    return std::unexpected(state_error("Failed to determine the active display's current space."));
-  }
-
-  std::vector<thumbnail_record> all_thumbnails;
-  if (!load_thumbnails_for_display(*pid, display, all_thumbnails)) {
-    return std::unexpected(state_error("Failed to read the Mission Control thumbnails."));
-  }
-
-  out.window_manager = *pid;
-  out.thumbnails = visible_thumbnails_in_reading_order(std::span{all_thumbnails}, *space_id);
-  out.frontmost_window.reset();
-  // The window list is front to back: the first one with a thumbnail wins.
-  if (std::vector<window_record> windows; load_on_screen_windows(windows)) {
-    for (const auto &window : windows) {
-      if (window.layer != 0 || !window.is_onscreen) {
-        continue;
-      }
-      if (std::ranges::find(out.thumbnails, window.window_id, &thumbnail_record::window_id) !=
-          out.thumbnails.end()) {
-        out.frontmost_window = window.window_id;
-        break;
-      }
-    }
-  }
-
+  out.thumbnails = thumbnails_on_display(std::span{windows}, display.bounds, only_pid);
+  out.frontmost_window = frontmost_thumbnail_window(std::span{windows}, std::span{out.thumbnails});
   return {};
 }
 
-// Hovers `thumbnails[index]` and records the session so the next cycle
-// hotkey continues from it.
+// Records `state` as the session, with the cursor where it is now (a hop
+// rounds it to whole points, so read it after hovering).
+void remember_session(cg::event_source_view synthetic_source, thumbnail_cycle_state state) {
+  if (const auto cursor_event = cg::event::create(synthetic_source)) {
+    const auto cursor = cursor_event.location();
+    state.cursor_x = cursor.x;
+    state.cursor_y = cursor.y;
+  }
+
+  std::lock_guard lock(thumbnail_cycle_state_mutex);
+  thumbnail_cycle_state_cache = std::move(state);
+}
+
+// Hovers `thumbnails[index]` on `display_uuid` and records the session so
+// the next cycle hotkey continues from it.
 auto hover_and_remember(
     cg::event_source_view synthetic_source,
+    std::string_view display_uuid,
     std::span<const thumbnail_record> thumbnails,
     std::size_t index,
     std::uint64_t timestamp_ms) -> bool {
@@ -617,6 +466,7 @@ auto hover_and_remember(
   }
 
   thumbnail_cycle_state state{
+      .display_uuid = std::string{display_uuid},
       .current_index = index,
       .last_cycle_timestamp_ms = timestamp_ms,
       .target_x = target_center.x,
@@ -626,22 +476,16 @@ auto hover_and_remember(
   for (const auto &thumbnail : thumbnails) {
     state.window_order.push_back(thumbnail.window_id);
   }
-  // The hop rounds the cursor to whole points; remember where it ended up.
-  if (const auto cursor_event = cg::event::create(synthetic_source)) {
-    const auto cursor = cursor_event.location();
-    state.cursor_x = cursor.x;
-    state.cursor_y = cursor.y;
-  }
-
-  std::lock_guard lock(thumbnail_cycle_state_mutex);
-  thumbnail_cycle_state_cache = std::move(state);
+  remember_session(synthetic_source, std::move(state));
   return true;
 }
 
-// One polling job for `highlight_frontmost_window_when_overlay_appears`.
+// One polling job for `highlight_frontmost_window_when_overlay_appears` /
+// `highlight_frontmost_window_when_space_appears`.
 struct overlay_highlight_job final {
   std::chrono::steady_clock::time_point deadline;
-  std::optional<display_record> display;
+  std::optional<display_record> display;       // resolved on the first tick when unset
+  std::optional<std::int64_t> expected_space_id;  // wait for this space to be current
   std::optional<CGRect> last_frame;  // the target's frame on the previous tick
 };
 
@@ -657,12 +501,35 @@ void poll_overlay_highlight(void *raw_job) {
     dispatch::to_main_after_ms(overlay_poll_interval_ms, poll_overlay_highlight, job.release());
   };
 
-  if (!job->display) {
+  const auto only_pid = overlay_app_filter();
+  overlay_snapshot snapshot;
+  if (job->display) {
+    if (job->expected_space_id &&
+        current_space_id_for_display(job->display->uuid) != job->expected_space_id) {
+      reschedule();
+      return;
+    }
+    if (!load_overlay_snapshot(*job->display, only_pid, snapshot)) {
+      reschedule();
+      return;
+    }
+  } else {
+    // The overlay was just opened: it is on the active display, or (App
+    // Exposé of an app with windows elsewhere only) wherever thumbnails turn
+    // up first. That display becomes the session's.
     std::vector<display_record> displays;
     const auto active_uuid = active_display_identifier();
-    if (load_active_displays(displays) && active_uuid) {
-      if (const auto index = find_current_display_index(displays, *active_uuid)) {
-        job->display = displays[*index];
+    if (!load_active_displays(displays) || !active_uuid) {
+      reschedule();
+      return;
+    }
+    if (const auto active = find_current_display_index(displays, *active_uuid)) {
+      std::swap(displays[0], displays[*active]);
+    }
+    for (const auto &display : displays) {
+      if (load_overlay_snapshot(display, only_pid, snapshot) && !snapshot.thumbnails.empty()) {
+        job->display = display;
+        break;
       }
     }
     if (!job->display) {
@@ -671,9 +538,7 @@ void poll_overlay_highlight(void *raw_job) {
     }
   }
 
-  overlay_snapshot snapshot;
-  if (!load_overlay_snapshot(*job->display, snapshot) || snapshot.thumbnails.empty() ||
-      !snapshot.frontmost_window) {
+  if (snapshot.thumbnails.empty() || !snapshot.frontmost_window) {
     reschedule();
     return;
   }
@@ -704,7 +569,8 @@ void poll_overlay_highlight(void *raw_job) {
   }
   source.set_user_data(spacehound::daemon::detail::synthetic_event_marker);
 
-  if (hover_and_remember(source.view(), std::span{snapshot.thumbnails}, *target, now_ms())) {
+  if (hover_and_remember(
+          source.view(), job->display->uuid, std::span{snapshot.thumbnails}, *target, now_ms())) {
     os_log_info(diagnostics::navigation_log(),
                 "Overlay highlight hovered the frontmost window (thumbnails=%{public}zu index=%{public}zu)",
                 snapshot.thumbnails.size(),
@@ -721,6 +587,77 @@ void highlight_frontmost_window_when_overlay_appears() {
       .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{overlay_poll_timeout_ms},
   };
   dispatch::to_main_after_ms(overlay_poll_interval_ms, poll_overlay_highlight, job);
+}
+
+void highlight_frontmost_window_when_space_appears(
+    display_record display,
+    std::int64_t expected_space_id) {
+  auto *job = new overlay_highlight_job{
+      .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{overlay_poll_timeout_ms},
+      .display = std::move(display),
+      .expected_space_id = expected_space_id,
+  };
+  dispatch::to_main_after_ms(overlay_poll_interval_ms, poll_overlay_highlight, job);
+}
+
+auto highlight_frontmost_on_display(
+    cg::event_source_view synthetic_source,
+    const display_record &display) -> std::expected<void, control::error> {
+  overlay_snapshot snapshot;
+  if (const auto loaded = load_overlay_snapshot(display, overlay_app_filter(), snapshot); !loaded) {
+    return std::unexpected(loaded.error());
+  }
+
+  const auto target = snapshot.frontmost_window
+                          ? std::optional{std::ranges::find(
+                                snapshot.thumbnails, *snapshot.frontmost_window,
+                                &thumbnail_record::window_id)}
+                          : std::nullopt;
+  if (!target || *target == snapshot.thumbnails.end()) {
+    remember_session(synthetic_source, thumbnail_cycle_state{
+                                           .display_uuid = display.uuid,
+                                           .last_cycle_timestamp_ms = now_ms(),
+                                       });
+    os_log_info(diagnostics::navigation_log(),
+                "Overlay moved to a display without thumbnails (thumbnails=%{public}zu)",
+                snapshot.thumbnails.size());
+    return {};
+  }
+
+  const auto index = static_cast<std::size_t>(*target - snapshot.thumbnails.begin());
+  if (!hover_and_remember(synthetic_source, display.uuid, std::span{snapshot.thumbnails}, index, now_ms())) {
+    return std::unexpected(runtime_error("Failed to post the thumbnail hover event."));
+  }
+
+  os_log_info(diagnostics::navigation_log(),
+              "Overlay moved to a display and hovered its frontmost window (thumbnails=%{public}zu index=%{public}zu)",
+              snapshot.thumbnails.size(),
+              index);
+  return {};
+}
+
+auto overlay_display(
+    cg::event_source_view synthetic_source,
+    std::span<const display_record> displays) -> std::optional<std::size_t> {
+  std::optional<thumbnail_cycle_state> state;
+  {
+    std::lock_guard lock(thumbnail_cycle_state_mutex);
+    state = thumbnail_cycle_state_cache;
+  }
+
+  std::optional<CGPoint> cursor;
+  if (const auto cursor_event = cg::event::create(synthetic_source)) {
+    cursor = cursor_event.location();
+  }
+
+  if (session_is_current(state, cursor, now_ms(), thumbnail_cycle_timeout_ms)) {
+    if (const auto index = find_current_display_index(displays, state->display_uuid)) {
+      return index;
+    }
+  }
+
+  const auto active_uuid = active_display_identifier();
+  return active_uuid ? find_current_display_index(displays, *active_uuid) : std::nullopt;
 }
 
 namespace {
@@ -792,17 +729,10 @@ void prepare_overlay_dismissal(cg::event_source_view synthetic_source) {
   }
   const auto cursor = cursor_event.location();
 
-  const bool cursor_still = std::fabs(cursor.x - state->cursor_x) <= cursor_still_tolerance &&
-                            std::fabs(cursor.y - state->cursor_y) <= cursor_still_tolerance;
-  if (!cursor_still || state->current_index >= state->window_order.size() ||
-      now_ms() - state->last_cycle_timestamp_ms >= thumbnail_cycle_timeout_ms) {
+  if (!session_is_current(state, cursor, now_ms(), thumbnail_cycle_timeout_ms) ||
+      state->current_index >= state->window_order.size()) {
     os_log_debug(diagnostics::navigation_log(),
                  "Overlay dismissal leaves the selection to the cursor");
-    return;
-  }
-
-  const auto active_uuid = active_display_identifier();
-  if (!active_uuid) {
     return;
   }
 
@@ -820,7 +750,7 @@ void prepare_overlay_dismissal(cg::event_source_view synthetic_source) {
       .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{dismissal_poll_timeout_ms},
       .original_cursor = cursor,
       .window_id = state->window_order[state->current_index],
-      .display_uuid = *active_uuid,
+      .display_uuid = state->display_uuid,
   };
   dispatch::to_main_after_ms(dismissal_poll_interval_ms, finish_overlay_dismissal, job);
 }
@@ -837,7 +767,8 @@ auto execute_thumbnail_cycle_request(
   };
 
   overlay_snapshot snapshot;
-  if (const auto loaded = load_overlay_snapshot(active_display, snapshot); !loaded) {
+  if (const auto loaded = load_overlay_snapshot(active_display, overlay_app_filter(), snapshot);
+      !loaded) {
     return std::unexpected(loaded.error());
   }
 
@@ -863,6 +794,7 @@ auto execute_thumbnail_cycle_request(
   const auto timestamp_ms = now_ms();
   const auto plan = plan_thumbnail_cycle(
       request,
+      active_display.uuid,
       std::span{snapshot.thumbnails},
       previous_state,
       cursor,
@@ -873,7 +805,8 @@ auto execute_thumbnail_cycle_request(
     return {};
   }
 
-  if (!hover_and_remember(synthetic_source, std::span{snapshot.thumbnails}, *plan.target_index, timestamp_ms)) {
+  if (!hover_and_remember(
+          synthetic_source, active_display.uuid, std::span{snapshot.thumbnails}, *plan.target_index, timestamp_ms)) {
     return std::unexpected(runtime_error("Failed to post the thumbnail hover event."));
   }
 

@@ -3,6 +3,7 @@
 #include <sys/types.h>
 
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 #include <spacehound/cf.hpp>
@@ -219,6 +220,9 @@ class workspace final {
 
   /// Returns the workspace notification center.
   [[nodiscard]] auto notification_center() const noexcept -> class notification_center;
+
+  /// Returns the process id of `NSWorkspace.frontmostApplication`, if any.
+  [[nodiscard]] auto frontmost_application_pid() const noexcept -> std::optional<pid_t>;
 
  private:
   explicit workspace(void *object) noexcept : object_(object) {}

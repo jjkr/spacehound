@@ -103,24 +103,24 @@ Through the Rust `accessibility` crate, the app also uses public AX concepts suc
   - Used to find Dock elements with identifiers like `mc`, `mc.spaces`, and `appexpose`.
   - This is how the app decides whether Mission Control or Expose is open and which Space thumbnail is selected.
 
-#### WindowManager (Mission Control thumbnails)
+#### Mission Control / App Exposé thumbnails
 
-On current macOS the Dock's `mc` / `appexpose` groups are empty stubs; the
-thumbnail tree belongs to the `WindowManager` process:
+On current macOS the Dock's `mc` / `appexpose` groups are empty stubs (they still
+tell the two overlays apart). The `WindowManager` process owns the overlay: an
+accessibility tree of `mc.display` / `appexpose.display` groups holding one
+`AXButton` per thumbnail (title, `AXFrame`, a private `wid`), which App Exposé
+only builds for a single display, and a display-sized on-screen window above the
+normal layers per display while an overlay shows (how the app tells that a swipe
+down is dismissing it).
 
-- `AXGroup` with identifier `mc.display` or `appexpose.display`, one per display,
-  carrying `AXDisplayID` (a `CGDirectDisplayID`) and a frame equal to the display.
-- Inside it, one `AXButton` per window thumbnail with the window title, `AXFrame`,
-  a private `wid` attribute (the `CGWindowID`) and, in Mission Control, an
-  identifier of the form `<bundle id>.space.<ManagedSpaceID>`. Thumbnails of every
-  space on the display are listed; only those of the current space are visible.
+The thumbnails themselves come from `CGWindowListCopyWindowInfo`: while an overlay
+shows, the window server reports every on-screen app window at its *thumbnail*
+bounds, on every display, front to back. WindowManager's own windows (the
+highlight frame) and, in App Exposé, other apps' windows are filtered out (see
+`lib/mission_control.cpp`; `examples/mc_probe.cpp` inspects both sources).
 
-The window-cycle hotkeys use this to hover thumbnails (see `lib/mission_control.cpp`
-and `examples/mc_probe.cpp`). While an overlay shows, WindowManager also owns a
-display-sized on-screen window above the normal layers, which is how the app tells
-that a swipe down is dismissing it. The overlay activates the thumbnail under the
-cursor as it closes, so a dismissal parks the hidden cursor on the highlighted
-thumbnail first.
+The overlay activates the thumbnail under the cursor as it closes, so a dismissal
+parks the hidden cursor on the highlighted thumbnail first.
 
 ### 2. Core Graphics / Quartz Event Services
 

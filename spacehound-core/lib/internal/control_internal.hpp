@@ -55,23 +55,23 @@ struct window_record final {
   std::int64_t layer = 0;
   CGRect bounds{};
   bool is_onscreen = false;
+  double alpha = 1.0;
 };
 
-// A window thumbnail in Mission Control / App Exposé, as WindowManager's
-// accessibility tree describes it.
+// A window's thumbnail in Mission Control / App Exposé: while an overlay
+// shows, the window list reports the window at its thumbnail's bounds.
 struct thumbnail_record final {
-  CGWindowID window_id = 0;   // the element's "wid" attribute; 0 when absent
-  std::int64_t space_id = -1; // from the "<bundle>.space.<N>" identifier; -1 when absent
-  CGRect frame{};             // the thumbnail's on-screen rectangle
+  CGWindowID window_id = 0;
+  CGRect frame{};  // the thumbnail's on-screen rectangle
 
   [[nodiscard]] auto operator==(const thumbnail_record &other) const noexcept -> bool {
-    return window_id == other.window_id && space_id == other.space_id &&
-           CGRectEqualToRect(frame, other.frame);
+    return window_id == other.window_id && CGRectEqualToRect(frame, other.frame);
   }
 };
 
 struct thumbnail_cycle_state final {
-  std::vector<CGWindowID> window_order;
+  std::string display_uuid;   // the display the session is on
+  std::vector<CGWindowID> window_order;  // may be empty: the display has no thumbnails
   std::size_t current_index = 0;
   std::uint64_t last_cycle_timestamp_ms = 0;
   // Where the cursor was after the hover; it moving since means the user
@@ -202,30 +202,55 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
 
 // --- Mission Control thumbnails (mission_control.cpp) ---
 
-// The managed space id in a thumbnail identifier such as
-// "org.mozilla.firefox.space.11".
-[[nodiscard]] auto parse_thumbnail_space_id(std::string_view identifier) noexcept
-    -> std::optional<std::int64_t>;
+// `thumbnails` in reading order: rows top to bottom (thumbnails whose
+// centers lie within half the median height of each other share a row),
+// left to right within a row.
+[[nodiscard]] auto thumbnails_in_reading_order(
+    std::span<const thumbnail_record> thumbnails) -> std::vector<thumbnail_record>;
 
-// Thumbnails on `space_id` (or without a space, as in App Exposé), in reading
-// order: rows top to bottom (thumbnails whose centers lie within half the
-// median height of each other share a row), left to right within a row.
-[[nodiscard]] auto visible_thumbnails_in_reading_order(
-    std::span<const thumbnail_record> thumbnails,
-    std::int64_t space_id) -> std::vector<thumbnail_record>;
+// The thumbnails on a display while an overlay shows: the on-screen, visible,
+// layer-0 app windows (as the window list reports them, at thumbnail bounds)
+// whose centers lie on `display_bounds`, in reading order. WindowManager's
+// own windows (the highlight frame among them) are not thumbnails.
+// With `only_pid`, only that process's windows count (App Exposé shows one
+// app; the others' windows stay in the list at their usual places).
+[[nodiscard]] auto thumbnails_on_display(
+    std::span<const window_record> windows,
+    CGRect display_bounds,
+    std::optional<pid_t> only_pid = std::nullopt) -> std::vector<thumbnail_record>;
+
+// The process whose windows the overlay shows: the frontmost application in
+// App Exposé, none (every app) in Mission Control. Reads the Dock's state.
+[[nodiscard]] auto overlay_app_filter() -> std::optional<pid_t>;
 
 [[nodiscard]] auto find_thumbnail_index_containing_point(
     std::span<const thumbnail_record> thumbnails,
     CGPoint point) noexcept -> std::optional<std::size_t>;
 
-// Which thumbnail to hover next. A session continues while its last hovered
-// window is still shown, the cursor has not moved since, and `timeout_ms` has
-// not elapsed. Otherwise it starts by stepping away from the thumbnail under
-// `cursor`; with no thumbnail there it lands on `frontmost_window`'s
-// thumbnail, or failing that the first/last. The plan's state carries the
-// current cursor, which the caller replaces with the post-hover position.
+// Whether a cycle session still describes the highlight: the cursor has not
+// moved since its hover (the highlight follows the real cursor) and
+// `timeout_ms` has not elapsed.
+[[nodiscard]] auto session_is_current(
+    const std::optional<thumbnail_cycle_state> &state,
+    std::optional<CGPoint> cursor,
+    std::uint64_t now_ms,
+    std::uint64_t timeout_ms) noexcept -> bool;
+
+// The window `windows` (front to back) shows first among those with a
+// thumbnail.
+[[nodiscard]] auto frontmost_thumbnail_window(
+    std::span<const window_record> windows,
+    std::span<const thumbnail_record> thumbnails) noexcept -> std::optional<CGWindowID>;
+
+// Which thumbnail to hover next. A session continues while it is current
+// (`session_is_current`) and its last hovered window is still shown.
+// Otherwise it starts by stepping away from the thumbnail under `cursor`;
+// with no thumbnail there it lands on `frontmost_window`'s thumbnail, or
+// failing that the first/last. The plan's state carries `display_uuid` and
+// the current cursor, which the caller replaces with the post-hover position.
 [[nodiscard]] auto plan_thumbnail_cycle(
     const control::window_focus_request &request,
+    std::string_view display_uuid,
     std::span<const thumbnail_record> thumbnails,
     const std::optional<thumbnail_cycle_state> &previous_state,
     std::optional<CGPoint> cursor,
@@ -233,19 +258,16 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
     std::uint64_t now_ms,
     std::uint64_t timeout_ms) -> thumbnail_cycle_plan;
 
-// The WindowManager process, which owns the Mission Control accessibility tree.
-[[nodiscard]] auto window_manager_pid() -> std::optional<pid_t>;
-
 // The current managed space id of the display with Spaces identifier
 // `display_uuid` (or of the single unified-spaces entry).
 [[nodiscard]] auto current_space_id_for_display(std::string_view display_uuid)
     -> std::optional<std::int64_t>;
 
-// Every thumbnail WindowManager lists for `display`: in Mission Control that
-// spans all of the display's spaces; in App Exposé only the shown windows.
+// The thumbnails currently shown on `display` (see `thumbnails_on_display`
+// and `overlay_app_filter`).
 [[nodiscard]] auto load_thumbnails_for_display(
-    pid_t window_manager_pid,
     const display_record &display,
+    std::optional<pid_t> only_pid,
     std::vector<thumbnail_record> &out_thumbnails) -> bool;
 
 // Moves the Mission Control hover highlight to `point`: a mouse-moved posted
@@ -257,6 +279,27 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
 // blocking it) until the thumbnail's frame has settled or ~1.5s pass, hovers
 // it, and seeds the cycle session so the next cycle hotkey steps on from it.
 void highlight_frontmost_window_when_overlay_appears();
+
+// The same, for `display` and only once its current space is
+// `expected_space_id`: for a workspace switch inside Mission Control.
+void highlight_frontmost_window_when_space_appears(
+    display_record display,
+    std::int64_t expected_space_id);
+
+// Hovers `display`'s frontmost thumbnail right away (the overlay is already
+// up) and moves the cycle session to that display; with no thumbnails there
+// the session only remembers the display.
+[[nodiscard]] auto highlight_frontmost_on_display(
+    cg::event_source_view synthetic_source,
+    const display_record &display) -> std::expected<void, control::error>;
+
+// The display overlay-mode requests act on: the cycle session's while the
+// session is current (hovering never moves the menu bar, so the window
+// server still reports where the overlay was opened), else the active
+// menu-bar display. An index into `displays`.
+[[nodiscard]] auto overlay_display(
+    cg::event_source_view synthetic_source,
+    std::span<const display_record> displays) -> std::optional<std::size_t>;
 
 // Whether Mission Control / App Exposé is on screen: WindowManager then owns
 // a display-sized window above the normal layers. Cheap (no AX), so safe to

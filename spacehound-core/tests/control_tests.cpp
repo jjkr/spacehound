@@ -499,9 +499,8 @@ TEST(control_tests, window_cycle_planner_clears_state_when_too_few_windows_exist
       detail::window_focus_plan{});
 }
 
-auto make_thumbnail(CGWindowID window_id, std::int64_t space_id, CGRect frame)
-    -> detail::thumbnail_record {
-  return detail::thumbnail_record{.window_id = window_id, .space_id = space_id, .frame = frame};
+auto make_thumbnail(CGWindowID window_id, CGRect frame) -> detail::thumbnail_record {
+  return detail::thumbnail_record{.window_id = window_id, .frame = frame};
 }
 
 auto thumbnail_window_ids(std::span<const detail::thumbnail_record> thumbnails)
@@ -513,42 +512,52 @@ auto thumbnail_window_ids(std::span<const detail::thumbnail_record> thumbnails)
   return ids;
 }
 
-TEST(control_tests, thumbnail_space_id_is_parsed_from_the_identifier_suffix) {
-  EXPECT_EQ(detail::parse_thumbnail_space_id("org.mozilla.firefox.space.11"), 11);
-  EXPECT_EQ(detail::parse_thumbnail_space_id("com.example.space.app.space.737"), 737);
-  EXPECT_EQ(detail::parse_thumbnail_space_id("com.apple.finder"), std::nullopt);
-  EXPECT_EQ(detail::parse_thumbnail_space_id("mc.spaces.add"), std::nullopt);
-  EXPECT_EQ(detail::parse_thumbnail_space_id("x.space."), std::nullopt);
-  EXPECT_EQ(detail::parse_thumbnail_space_id("x.space.1a"), std::nullopt);
-}
-
 TEST(control_tests, dock_view_state_names_are_stable) {
   EXPECT_EQ(detail::dock_view_state_name(detail::dock_view_state::hidden), "hidden");
   EXPECT_EQ(detail::dock_view_state_name(detail::dock_view_state::mission_control), "mission-control");
   EXPECT_EQ(detail::dock_view_state_name(detail::dock_view_state::expose), "expose");
 }
 
-TEST(control_tests, visible_thumbnails_keep_the_current_space_and_sort_in_reading_order) {
+auto make_window(CGWindowID window_id, CGRect bounds, std::int64_t layer = 0, bool onscreen = true)
+    -> detail::window_record {
+  return detail::window_record{
+      .window_id = window_id, .pid = 1, .layer = layer, .bounds = bounds, .is_onscreen = onscreen};
+}
+
+TEST(control_tests, thumbnails_on_display_filter_windows_and_sort_in_reading_order) {
+  const CGRect display = make_rect(0, 0, 1000, 800);
   // Two rows of 200-high thumbnails; row members jitter within half a height.
-  const std::vector<detail::thumbnail_record> thumbnails{
-      make_thumbnail(1U, 7, make_rect(600, 120, 300, 200)),   // row 1, right
-      make_thumbnail(2U, 5, make_rect(0, 0, 300, 200)),       // other space
-      make_thumbnail(3U, 7, make_rect(50, 420, 300, 200)),    // row 2, left
-      make_thumbnail(4U, 7, make_rect(20, 60, 300, 200)),     // row 1, left (jittered up)
-      make_thumbnail(5U, -1, make_rect(400, 400, 300, 200)),  // no space: App Exposé, row 2 right
+  const std::vector<detail::window_record> windows{
+      make_window(1U, make_rect(600, 120, 300, 200)),          // row 1, right
+      make_window(2U, make_rect(1200, 0, 300, 200)),           // other display
+      make_window(3U, make_rect(50, 420, 300, 200)),           // row 2, left
+      make_window(4U, make_rect(20, 60, 300, 200)),            // row 1, left (jittered up)
+      make_window(5U, make_rect(400, 400, 300, 200)),          // row 2, right
+      make_window(6U, make_rect(0, 0, 300, 200), 25),          // not layer 0
+      make_window(7U, make_rect(0, 0, 300, 200), 0, false),    // off screen
+      make_window(8U, make_rect(0, 0, 0, 0)),                  // empty
+      {.window_id = 9U, .pid = 1, .owner_name = "WindowManager", .layer = 0,
+       .bounds = make_rect(20, 60, 300, 200), .is_onscreen = true},     // the highlight frame
+      {.window_id = 10U, .pid = 1, .layer = 0, .bounds = make_rect(400, 400, 300, 200),
+       .is_onscreen = true, .alpha = 0.0},                              // invisible
   };
 
-  const auto visible = detail::visible_thumbnails_in_reading_order(std::span{thumbnails}, 7);
-  EXPECT_EQ(thumbnail_window_ids(visible), (std::vector<CGWindowID>{4U, 1U, 3U, 5U}));
+  const auto thumbnails = detail::thumbnails_on_display(std::span{windows}, display);
+  EXPECT_EQ(thumbnail_window_ids(thumbnails), (std::vector<CGWindowID>{4U, 1U, 3U, 5U}));
+  EXPECT_TRUE(detail::thumbnails_on_display({}, display).empty());
 
-  EXPECT_TRUE(detail::visible_thumbnails_in_reading_order(std::span{thumbnails}, 99).size() == 1U);
-  EXPECT_TRUE(detail::visible_thumbnails_in_reading_order({}, 7).empty());
+  // App Exposé: only the exposed app's windows are thumbnails.
+  auto one_app = windows;
+  one_app[2].pid = 2;  // window 3 belongs to another app
+  EXPECT_EQ(
+      thumbnail_window_ids(detail::thumbnails_on_display(std::span{one_app}, display, 1)),
+      (std::vector<CGWindowID>{4U, 1U, 5U}));
 }
 
 TEST(control_tests, thumbnail_index_lookup_uses_half_open_frames) {
   const std::vector<detail::thumbnail_record> thumbnails{
-      make_thumbnail(1U, 7, make_rect(0, 0, 100, 100)),
-      make_thumbnail(2U, 7, make_rect(100, 0, 100, 100)),
+      make_thumbnail(1U, make_rect(0, 0, 100, 100)),
+      make_thumbnail(2U, make_rect(100, 0, 100, 100)),
   };
 
   EXPECT_EQ(detail::find_thumbnail_index_containing_point(std::span{thumbnails}, CGPointMake(99, 50)), 0U);
@@ -558,9 +567,9 @@ TEST(control_tests, thumbnail_index_lookup_uses_half_open_frames) {
 
 TEST(control_tests, thumbnail_cycle_planner_starts_from_the_cursor_or_the_ends) {
   const std::vector<detail::thumbnail_record> thumbnails{
-      make_thumbnail(11U, 7, make_rect(0, 0, 100, 100)),
-      make_thumbnail(12U, 7, make_rect(100, 0, 100, 100)),
-      make_thumbnail(13U, 7, make_rect(200, 0, 100, 100)),
+      make_thumbnail(11U, make_rect(0, 0, 100, 100)),
+      make_thumbnail(12U, make_rect(100, 0, 100, 100)),
+      make_thumbnail(13U, make_rect(200, 0, 100, 100)),
   };
   const control::window_focus_request next{.direction = control::window_focus_direction::next};
   const control::window_focus_request previous{
@@ -568,10 +577,11 @@ TEST(control_tests, thumbnail_cycle_planner_starts_from_the_cursor_or_the_ends) 
 
   // Cursor over the middle thumbnail: step away from it.
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(next, std::span{thumbnails}, std::nullopt, CGPointMake(150, 50), std::nullopt, 1000U, 3000U),
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, std::nullopt, CGPointMake(150, 50), std::nullopt, 1000U, 3000U),
       (detail::thumbnail_cycle_plan{
           .target_index = 2U,
           .next_state = detail::thumbnail_cycle_state{
+              .display_uuid = "display-a",
               .window_order = {11U, 12U, 13U},
               .current_index = 2U,
               .last_cycle_timestamp_ms = 1000U,
@@ -582,17 +592,17 @@ TEST(control_tests, thumbnail_cycle_planner_starts_from_the_cursor_or_the_ends) 
           },
       }));
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(previous, std::span{thumbnails}, std::nullopt, CGPointMake(150, 50), std::nullopt, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(previous, "display-a", std::span{thumbnails}, std::nullopt, CGPointMake(150, 50), std::nullopt, 1000U, 3000U)
           .target_index,
       0U);
 
   // Cursor elsewhere (or unknown): first for next, last for previous.
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(next, std::span{thumbnails}, std::nullopt, CGPointMake(900, 900), std::nullopt, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, std::nullopt, CGPointMake(900, 900), std::nullopt, 1000U, 3000U)
           .target_index,
       0U);
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(previous, std::span{thumbnails}, std::nullopt, std::nullopt, std::nullopt, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(previous, "display-a", std::span{thumbnails}, std::nullopt, std::nullopt, std::nullopt, 1000U, 3000U)
           .target_index,
       2U);
 }
@@ -601,9 +611,9 @@ TEST(control_tests, thumbnail_cycle_planner_continues_by_window_id_and_wraps) {
   // Re-enumerated with a new thumbnail inserted in front: the session follows
   // the window it last hovered (12), not its old index.
   const std::vector<detail::thumbnail_record> thumbnails{
-      make_thumbnail(10U, 7, make_rect(0, 0, 100, 100)),
-      make_thumbnail(11U, 7, make_rect(100, 0, 100, 100)),
-      make_thumbnail(12U, 7, make_rect(200, 0, 100, 100)),
+      make_thumbnail(10U, make_rect(0, 0, 100, 100)),
+      make_thumbnail(11U, make_rect(100, 0, 100, 100)),
+      make_thumbnail(12U, make_rect(200, 0, 100, 100)),
   };
   const std::optional<detail::thumbnail_cycle_state> previous_state = detail::thumbnail_cycle_state{
       .window_order = {11U, 12U},
@@ -619,11 +629,11 @@ TEST(control_tests, thumbnail_cycle_planner_continues_by_window_id_and_wraps) {
   // Next from the last thumbnail wraps to the first; the cursor (unmoved,
   // within a point) is ignored as a start point.
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(
-          next, std::span{thumbnails}, previous_state, CGPointMake(150.5, 50), 12U, 1500U, 3000U),
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, previous_state, CGPointMake(150.5, 50), 12U, 1500U, 3000U),
       (detail::thumbnail_cycle_plan{
           .target_index = 0U,
           .next_state = detail::thumbnail_cycle_state{
+              .display_uuid = "display-a",
               .window_order = {10U, 11U, 12U},
               .current_index = 0U,
               .last_cycle_timestamp_ms = 1500U,
@@ -634,17 +644,16 @@ TEST(control_tests, thumbnail_cycle_planner_continues_by_window_id_and_wraps) {
           },
       }));
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(
-          previous, std::span{thumbnails}, previous_state, CGPointMake(150, 50), 12U, 1500U, 3000U)
+      detail::plan_thumbnail_cycle(previous, "display-a", std::span{thumbnails}, previous_state, CGPointMake(150, 50), 12U, 1500U, 3000U)
           .target_index,
       1U);
 }
 
 TEST(control_tests, thumbnail_cycle_planner_restarts_when_the_cursor_moved) {
   const std::vector<detail::thumbnail_record> thumbnails{
-      make_thumbnail(11U, 7, make_rect(0, 0, 100, 100)),
-      make_thumbnail(12U, 7, make_rect(100, 0, 100, 100)),
-      make_thumbnail(13U, 7, make_rect(200, 0, 100, 100)),
+      make_thumbnail(11U, make_rect(0, 0, 100, 100)),
+      make_thumbnail(12U, make_rect(100, 0, 100, 100)),
+      make_thumbnail(13U, make_rect(200, 0, 100, 100)),
   };
   const std::optional<detail::thumbnail_cycle_state> previous_state = detail::thumbnail_cycle_state{
       .window_order = {11U, 12U, 13U},
@@ -658,22 +667,20 @@ TEST(control_tests, thumbnail_cycle_planner_restarts_when_the_cursor_moved) {
   // The mouse moved onto the first thumbnail: the highlight is there now, so
   // step away from it rather than from the session's window.
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(
-          next, std::span{thumbnails}, previous_state, CGPointMake(50, 50), 13U, 1500U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, previous_state, CGPointMake(50, 50), 13U, 1500U, 3000U)
           .target_index,
       1U);
   // Moved off every thumbnail: land on the frontmost window.
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(
-          next, std::span{thumbnails}, previous_state, CGPointMake(900, 900), 13U, 1500U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, previous_state, CGPointMake(900, 900), 13U, 1500U, 3000U)
           .target_index,
       2U);
 }
 
 TEST(control_tests, thumbnail_cycle_planner_restarts_after_timeout_or_when_the_window_is_gone) {
   const std::vector<detail::thumbnail_record> thumbnails{
-      make_thumbnail(11U, 7, make_rect(0, 0, 100, 100)),
-      make_thumbnail(12U, 7, make_rect(100, 0, 100, 100)),
+      make_thumbnail(11U, make_rect(0, 0, 100, 100)),
+      make_thumbnail(12U, make_rect(100, 0, 100, 100)),
   };
   const control::window_focus_request next{.direction = control::window_focus_direction::next};
 
@@ -685,8 +692,7 @@ TEST(control_tests, thumbnail_cycle_planner_restarts_after_timeout_or_when_the_w
       .cursor_y = 900.0,
   };
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(
-          next, std::span{thumbnails}, timed_out, CGPointMake(900, 900), std::nullopt, 4000U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, timed_out, CGPointMake(900, 900), std::nullopt, 4000U, 3000U)
           .target_index,
       0U);
 
@@ -698,17 +704,16 @@ TEST(control_tests, thumbnail_cycle_planner_restarts_after_timeout_or_when_the_w
       .cursor_y = 50.0,
   };
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(
-          next, std::span{thumbnails}, stale, CGPointMake(150, 50), std::nullopt, 1500U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, stale, CGPointMake(150, 50), std::nullopt, 1500U, 3000U)
           .target_index,
       0U);
 }
 
 TEST(control_tests, thumbnail_cycle_planner_lands_on_the_frontmost_window_first) {
   const std::vector<detail::thumbnail_record> thumbnails{
-      make_thumbnail(11U, 7, make_rect(0, 0, 100, 100)),
-      make_thumbnail(12U, 7, make_rect(100, 0, 100, 100)),
-      make_thumbnail(13U, 7, make_rect(200, 0, 100, 100)),
+      make_thumbnail(11U, make_rect(0, 0, 100, 100)),
+      make_thumbnail(12U, make_rect(100, 0, 100, 100)),
+      make_thumbnail(13U, make_rect(200, 0, 100, 100)),
   };
   const control::window_focus_request next{.direction = control::window_focus_direction::next};
   const control::window_focus_request previous{
@@ -716,42 +721,77 @@ TEST(control_tests, thumbnail_cycle_planner_lands_on_the_frontmost_window_first)
 
   // No cursor hit and no session: both directions land on the frontmost window.
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(next, std::span{thumbnails}, std::nullopt, CGPointMake(900, 900), 12U, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, std::nullopt, CGPointMake(900, 900), 12U, 1000U, 3000U)
           .target_index,
       1U);
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(previous, std::span{thumbnails}, std::nullopt, std::nullopt, 12U, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(previous, "display-a", std::span{thumbnails}, std::nullopt, std::nullopt, 12U, 1000U, 3000U)
           .target_index,
       1U);
 
   // A frontmost window without a thumbnail falls back to the ends.
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(next, std::span{thumbnails}, std::nullopt, std::nullopt, 99U, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, std::nullopt, std::nullopt, 99U, 1000U, 3000U)
           .target_index,
       0U);
 
   // The cursor's thumbnail wins over the frontmost window.
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(next, std::span{thumbnails}, std::nullopt, CGPointMake(50, 50), 12U, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, std::nullopt, CGPointMake(50, 50), 12U, 1000U, 3000U)
           .target_index,
       1U);
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(next, std::span{thumbnails}, std::nullopt, CGPointMake(250, 50), 12U, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{thumbnails}, std::nullopt, CGPointMake(250, 50), 12U, 1000U, 3000U)
           .target_index,
       0U);
+}
+
+TEST(control_tests, thumbnail_session_is_current_while_the_cursor_stays_put) {
+  const std::optional<detail::thumbnail_cycle_state> state = detail::thumbnail_cycle_state{
+      .display_uuid = "display-a",
+      .last_cycle_timestamp_ms = 1000U,
+      .cursor_x = 150.0,
+      .cursor_y = 50.0,
+  };
+
+  EXPECT_TRUE(detail::session_is_current(state, CGPointMake(150, 50), 1500U, 3000U));
+  EXPECT_TRUE(detail::session_is_current(state, CGPointMake(150.9, 49.2), 1500U, 3000U));
+  EXPECT_FALSE(detail::session_is_current(state, CGPointMake(152, 50), 1500U, 3000U));
+  EXPECT_FALSE(detail::session_is_current(state, CGPointMake(150, 50), 4000U, 3000U));
+  EXPECT_FALSE(detail::session_is_current(state, CGPointMake(150, 50), 900U, 3000U));
+  EXPECT_FALSE(detail::session_is_current(state, std::nullopt, 1500U, 3000U));
+  EXPECT_FALSE(detail::session_is_current(std::nullopt, CGPointMake(150, 50), 1500U, 3000U));
+}
+
+TEST(control_tests, frontmost_thumbnail_window_follows_window_list_order) {
+  const std::vector<detail::thumbnail_record> thumbnails{
+      make_thumbnail(11U, make_rect(0, 0, 100, 100)),
+      make_thumbnail(12U, make_rect(100, 0, 100, 100)),
+  };
+  const std::vector<detail::window_record> windows{
+      {.window_id = 99U, .pid = 1, .layer = 0, .bounds = make_rect(0, 0, 10, 10), .is_onscreen = true},
+      {.window_id = 12U, .pid = 1, .layer = 25, .bounds = make_rect(0, 0, 10, 10), .is_onscreen = true},
+      {.window_id = 12U, .pid = 1, .layer = 0, .bounds = make_rect(0, 0, 10, 10), .is_onscreen = false},
+      {.window_id = 12U, .pid = 1, .layer = 0, .bounds = make_rect(0, 0, 10, 10), .is_onscreen = true},
+      {.window_id = 11U, .pid = 1, .layer = 0, .bounds = make_rect(0, 0, 10, 10), .is_onscreen = true},
+  };
+
+  EXPECT_EQ(detail::frontmost_thumbnail_window(std::span{windows}, std::span{thumbnails}), 12U);
+  EXPECT_EQ(detail::frontmost_thumbnail_window(std::span{windows}, {}), std::nullopt);
+  EXPECT_EQ(detail::frontmost_thumbnail_window({}, std::span{thumbnails}), std::nullopt);
 }
 
 TEST(control_tests, thumbnail_cycle_planner_handles_single_and_empty_lists) {
   const control::window_focus_request next{.direction = control::window_focus_direction::next};
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(next, {}, std::nullopt, std::nullopt, std::nullopt, 1000U, 3000U),
+      detail::plan_thumbnail_cycle(next, "display-a", {}, std::nullopt, std::nullopt, std::nullopt, 1000U, 3000U),
       detail::thumbnail_cycle_plan{});
 
   const std::vector<detail::thumbnail_record> single{
-      make_thumbnail(11U, 7, make_rect(0, 0, 100, 100)),
+      make_thumbnail(11U, make_rect(0, 0, 100, 100)),
   };
   EXPECT_EQ(
-      detail::plan_thumbnail_cycle(next, std::span{single}, std::nullopt, CGPointMake(50, 50), std::nullopt, 1000U, 3000U)
+      detail::plan_thumbnail_cycle(next, "display-a", std::span{single}, std::nullopt, CGPointMake(50, 50), std::nullopt, 1000U, 3000U)
           .target_index,
       0U);
 }

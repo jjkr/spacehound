@@ -119,7 +119,10 @@ window is highlighted as soon as it appears and the keys step on from there
 (swiping it open highlights nothing, since the mouse is in play then);
 otherwise the first press lands on the focused window, or steps away from the
 thumbnail under the cursor. Dismissing the overlay through SpaceHound brings
-the highlighted window to the front.
+the highlighted window to the front. The display shortcuts move the highlight
+to the frontmost thumbnail on the target display, and inside Mission Control
+the Space shortcuts highlight the frontmost window of the Space they switch
+to (in App Exposé, left/right switch apps as they do natively).
 
 ### System
 

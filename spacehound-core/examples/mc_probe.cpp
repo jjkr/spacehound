@@ -6,7 +6,7 @@
 // Control can be opened, e.g. `open -b com.apple.exposelauncher; mc_probe list`.
 //
 //   dump [max-depth] [--wm]      Dump the Dock's (or WindowManager's) AX tree.
-//   list                         Visible thumbnails per display, reading order.
+//   list                         Thumbnails per display (window list), reading order.
 //   hit X Y [X Y ...]            System-wide AX hit test with ancestor chain.
 //   hover-current DISPLAY INDEX [pid|hop|hide|stay]
 //                                Hover a visible thumbnail; holds MC_PROBE_HOLD s.
@@ -191,6 +191,27 @@ void dump_element(ax::ui_element_view element, std::size_t depth, std::size_t ma
   }
 }
 
+auto window_manager_pid() -> std::optional<pid_t> {
+  const auto info = cg::copy_window_info(
+      static_cast<CGWindowListOption>(kCGWindowListOptionAll), kCGNullWindowID);
+  if (!info) {
+    return std::nullopt;
+  }
+  const auto array = cf::view<CFArrayRef>{info.get()};
+  for (CFIndex index = 0; index < CFArrayGetCount(array.get()); ++index) {
+    const auto dict_ref = cf::array_at<CFDictionaryRef>(array, index);
+    if (!dict_ref) {
+      continue;
+    }
+    const auto dict = cf::dictionary_view{dict_ref};
+    const auto owner = dict.find<CFStringRef>(cg::window_owner_name_key);
+    if (owner && cf::string_view{owner}.to_utf8() == "WindowManager") {
+      return static_cast<pid_t>(number_int64(dict, cg::window_owner_pid_key));
+    }
+  }
+  return std::nullopt;
+}
+
 auto cursor_location(cg::event_source_view source) -> CGPoint {
   return cg::event::create(source).location();
 }
@@ -222,7 +243,7 @@ auto run_dump(int argc, char **argv) -> int {
   wait_for_start();
   auto pid = require_dock();
   if (window_manager) {
-    const auto wm_pid = detail::window_manager_pid();
+    const auto wm_pid = window_manager_pid();
     if (!wm_pid) {
       std::cerr << "WindowManager not found\n";
       return 2;
@@ -237,16 +258,11 @@ auto run_dump(int argc, char **argv) -> int {
 
 using display_thumbnails = std::pair<detail::display_record, std::vector<detail::thumbnail_record>>;
 
-// Lists the visible thumbnails on each display's current space through the
+// Lists the thumbnails on each display (from the window list, which reports
+// windows at their thumbnail bounds while an overlay shows) through the
 // core's enumeration.
 auto list_visible_thumbnails() -> std::vector<display_thumbnails> {
   std::vector<display_thumbnails> result;
-  const auto wm = detail::window_manager_pid();
-  if (!wm) {
-    std::cerr << "WindowManager not found\n";
-    return result;
-  }
-
   std::vector<detail::display_record> displays;
   if (!detail::load_active_displays(displays)) {
     return result;
@@ -254,14 +270,11 @@ auto list_visible_thumbnails() -> std::vector<display_thumbnails> {
 
   for (const auto &display : displays) {
     const auto space_id = detail::current_space_id_for_display(display.uuid);
-    std::vector<detail::thumbnail_record> all;
-    const bool loaded = detail::load_thumbnails_for_display(*wm, display, all);
-    auto visible = space_id ? detail::visible_thumbnails_in_reading_order(std::span{all}, *space_id)
-                            : std::vector<detail::thumbnail_record>{};
+    std::vector<detail::thumbnail_record> visible;
+    const bool loaded = detail::load_thumbnails_for_display(display, detail::overlay_app_filter(), visible);
     std::cout << "display " << display.display_id << " uuid=" << display.uuid
               << " space=" << (space_id ? std::to_string(*space_id) : "?")
-              << " loaded=" << std::boolalpha << loaded << " total=" << all.size()
-              << " visible=" << visible.size() << '\n';
+              << " loaded=" << std::boolalpha << loaded << " visible=" << visible.size() << '\n';
     for (std::size_t index = 0; index < visible.size(); ++index) {
       std::cout << "  [" << index << "] wid=" << visible[index].window_id;
       print_frame(visible[index].frame);
@@ -341,7 +354,7 @@ auto run_hover_current(int argc, char **argv) -> int {
 
     bool posted = false;
     if (mechanism == "pid") {
-      event.post_to_pid(*detail::window_manager_pid());
+      event.post_to_pid(*window_manager_pid());
       posted = true;
     } else if (mechanism == "hop") {
       posted = detail::hover_thumbnail(source.view(), point);
@@ -434,7 +447,7 @@ auto run_expose(int argc, char **argv) -> int {
             << item.view().perform_action(cf::string_view{CFSTR("AXShowExpose")}) << '\n';
   wait_for_start();
   (void)require_dock();
-  if (const auto wm = detail::window_manager_pid()) {
+  if (const auto wm = window_manager_pid()) {
     dump_element(ax::ui_element::create_application(*wm).view(), 0, 3);
   }
   (void)list_visible_thumbnails();
@@ -498,7 +511,7 @@ auto run_windows(int argc, char **argv) -> int {
   wait_for_start();
   auto pid = require_dock();
   if (window_manager) {
-    pid = detail::window_manager_pid().value_or(pid);
+    pid = window_manager_pid().value_or(pid);
     std::cout << "WindowManager pid=" << pid << '\n';
   }
   const auto info = cg::copy_window_info(
@@ -528,6 +541,23 @@ auto run_windows(int argc, char **argv) -> int {
       std::cout << '\n';
     } else if (layer == 0) {
       ++app_windows;
+      CGRect bounds{};
+      if (const auto dictionary = dict.find<CFDictionaryRef>(cg::window_bounds_key)) {
+        CGRectMakeWithDictionaryRepresentation(dictionary.get(), &bounds);
+      }
+      double alpha = -1;
+      if (const auto number = dict.find<CFNumberRef>(cf::string_view{kCGWindowAlpha})) {
+        CFNumberGetValue(number.get(), kCFNumberDoubleType, &alpha);
+      }
+      std::string owner;
+      if (const auto name = dict.find<CFStringRef>(cg::window_owner_name_key)) {
+        owner = cf::string_view{name}.to_utf8().value_or("");
+      }
+      std::cout << "app wid=" << number_int64(dict, cg::window_number_key) << " pid="
+                << number_int64(dict, cg::window_owner_pid_key) << " owner=\"" << owner
+                << "\" alpha=" << alpha;
+      print_frame(bounds);
+      std::cout << '\n';
     }
   }
   std::cout << "layer-0 app windows still on screen: " << app_windows << '\n';
