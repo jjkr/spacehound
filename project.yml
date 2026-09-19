@@ -17,10 +17,10 @@ settings:
 packages:
   Sentry:
     url: https://github.com/getsentry/sentry-cocoa
-    exactVersion: 9.13.0
+    exactVersion: 9.29.0
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    exactVersion: 2.9.2
+    exactVersion: 2.10.0
 
 targets:
   SpaceHound:

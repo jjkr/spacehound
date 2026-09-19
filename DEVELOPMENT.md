@@ -48,7 +48,7 @@ Key source files:
 
 - macOS 14.0 or newer (deployment target)
 - Xcode 26.4 or newer
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.45.3 or newer
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.46.0 or newer
 
 ## Generate the project
 

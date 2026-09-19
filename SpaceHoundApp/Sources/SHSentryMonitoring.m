@@ -64,7 +64,6 @@ void SHStartSentryMonitoring(void) {
     options.enableAutoBreadcrumbTracking = NO;
     options.enableNetworkBreadcrumbs = NO;
     options.enableCaptureFailedRequests = NO;
-    options.enableSigtermReporting = NO;
     options.enableWatchdogTerminationTracking = NO;
     options.enableAppHangTracking = NO;
     options.enableMetricKit = NO;
