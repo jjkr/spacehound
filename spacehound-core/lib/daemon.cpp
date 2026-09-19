@@ -685,10 +685,12 @@ auto initialize_runtime(
                   }
                 }
 
-                // A swipe down while Mission Control shows dismisses it; the
-                // overlay then activates the thumbnail under the cursor, so
-                // park the cursor on the highlighted one before the replay
-                // (window-list check and warp only: no AX, no waiting).
+                // A swipe down while an overlay shows dismisses it, and the
+                // overlay activates the thumbnail under the cursor as it
+                // closes: park the cursor on the one the cycle hotkeys
+                // highlighted first (window-list check and a warp: no AX, no
+                // waiting). Opening by swipe highlights nothing: the user is
+                // on the mouse, so where it points is what counts.
                 if (swipe_direction == gesture::direction::down &&
                     control::detail::overlay_is_showing()) {
                   control::detail::prepare_overlay_dismissal(context->synthetic_source.view());
@@ -700,11 +702,6 @@ auto initialize_runtime(
                 os_log_debug(diagnostics::navigation_log(),
                              "Fast swipe replay completed (direction=%{public}s)",
                              gesture_direction_name(swipe_direction).data());
-                if (swipe_direction == gesture::direction::up) {
-                  // Mission Control is opening: highlight the focused window
-                  // once it has appeared (polled from the main queue).
-                  control::detail::highlight_frontmost_window_when_overlay_appears();
-                }
               }
 
               return nullptr;

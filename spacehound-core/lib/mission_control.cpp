@@ -587,9 +587,17 @@ auto load_overlay_snapshot(const display_record &display, overlay_snapshot &out)
   out.window_manager = *pid;
   out.thumbnails = visible_thumbnails_in_reading_order(std::span{all_thumbnails}, *space_id);
   out.frontmost_window.reset();
+  // The window list is front to back: the first one with a thumbnail wins.
   if (std::vector<window_record> windows; load_on_screen_windows(windows)) {
-    if (const auto index = find_frontmost_window_index_on_display(std::span{windows}, display.bounds)) {
-      out.frontmost_window = windows[*index].window_id;
+    for (const auto &window : windows) {
+      if (window.layer != 0 || !window.is_onscreen) {
+        continue;
+      }
+      if (std::ranges::find(out.thumbnails, window.window_id, &thumbnail_record::window_id) !=
+          out.thumbnails.end()) {
+        out.frontmost_window = window.window_id;
+        break;
+      }
     }
   }
 

@@ -42,8 +42,8 @@ access is granted. If you skip the prompt, the menu bar shows a ⚠️ badge and
 - **Display switching** — move to a specific display or step between displays.
 - **Window focus** — cycle focus to the next or previous window. While Mission
   Control or App Exposé is showing, the same keys move the hover highlight
-  between window thumbnails instead, and opening either through SpaceHound
-  highlights the focused window right away.
+  between window thumbnails instead, and opening either with a SpaceHound
+  hotkey highlights the focused window right away.
 - **System shortcuts** — toggle Mission Control and App Exposé.
 - **Menu bar indicator** — always shows the number of the Space you're currently
   on.
@@ -115,7 +115,8 @@ actions).
 With Mission Control or App Exposé open, these step the highlight through the
 visible thumbnails in reading order (left to right, top to bottom). When
 SpaceHound opened the overlay (toggle shortcut or fast swipe), the focused
-window is highlighted as soon as it appears and the keys step on from there;
+window is highlighted as soon as it appears and the keys step on from there
+(swiping it open highlights nothing, since the mouse is in play then);
 otherwise the first press lands on the focused window, or steps away from the
 thumbnail under the cursor. Dismissing the overlay through SpaceHound brings
 the highlighted window to the front.
