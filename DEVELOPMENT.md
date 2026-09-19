@@ -152,7 +152,9 @@ without touching the binaries. The repo includes:
 - `release-notes/vX.Y.Z.md` files for reviewed, user-facing Sparkle and GitHub
   Release notes. Copy `release-notes/TEMPLATE.md` when preparing a version.
 - `updates/` for the Cloudflare Worker configuration. `updates/public/appcast.xml`
-  is written by the workflows and is not committed.
+  is written by the workflows and is not committed. `robots.txt` and the
+  `X-Robots-Tag: noindex` header in `_headers` keep the host out of search
+  and AI crawler indexes.
 
 Both workflows share one concurrency group and start by fetching the published
 feed, so two release operations can never interleave their edits. A release is

@@ -135,6 +135,11 @@ if grep -q 'package-release.sh' "${promote_workflow}"; then
   exit 1
 fi
 
+# --- updates site -------------------------------------------------------------
+
+grep -q 'X-Robots-Tag: noindex' "${root_dir}/updates/public/_headers"
+grep -q '^Disallow: /$' "${root_dir}/updates/public/robots.txt"
+
 # --- version ordering against a published feed --------------------------------
 
 cat > "${test_dir}/appcast.xml" <<'EOF'

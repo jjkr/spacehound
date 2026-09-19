@@ -1,3 +1,12 @@
+# Nothing here is meant for search engines or AI crawlers. robots.txt asks
+# them not to fetch, and X-Robots-Tag keeps the feed out of indexes even if
+# they do. Cloudflare merges headers from every matching rule.
+/*
+  X-Robots-Tag: noindex, nofollow
+
+/robots.txt
+  Cache-Control: public, max-age=86400
+
 # Sparkle checks the feed daily; a short TTL lets promotions reach users
 # quickly without every check hitting the origin.
 /appcast.xml
