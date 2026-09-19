@@ -181,6 +181,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # The action defaults to wrangler 3, which cannot deploy an
+          # assets-only Worker.
+          wranglerVersion: "4.135.0"
           workingDirectory: updates
           command: deploy
 

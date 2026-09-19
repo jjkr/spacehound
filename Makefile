@@ -59,10 +59,10 @@ release-script-tests:
 # release, or to recover after putting the intended appcast.xml in place.
 # Authenticate first with `make updates-login` or CLOUDFLARE_API_TOKEN.
 updates-deploy:
-	cd updates && mise exec -- npx --yes wrangler@4 deploy
+	cd updates && mise exec -- npx --yes wrangler@4.135.0 deploy
 
 updates-login:
-	cd updates && mise exec -- npx --yes wrangler@4 login
+	cd updates && mise exec -- npx --yes wrangler@4.135.0 login
 
 run: build
 	open "$(APP_PATH)"
