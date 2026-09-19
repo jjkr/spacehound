@@ -685,6 +685,15 @@ auto initialize_runtime(
                   }
                 }
 
+                // A swipe down while Mission Control shows dismisses it; the
+                // overlay then activates the thumbnail under the cursor, so
+                // park the cursor on the highlighted one before the replay
+                // (window-list check and warp only: no AX, no waiting).
+                if (swipe_direction == gesture::direction::down &&
+                    control::detail::overlay_is_showing()) {
+                  control::detail::prepare_overlay_dismissal(context->synthetic_source.view());
+                }
+
                 if (!compile_fast_swipe_replay(swipe_direction, context->synthetic_source)) {
                   return event_ref;
                 }

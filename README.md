@@ -117,7 +117,8 @@ visible thumbnails in reading order (left to right, top to bottom). When
 SpaceHound opened the overlay (toggle shortcut or fast swipe), the focused
 window is highlighted as soon as it appears and the keys step on from there;
 otherwise the first press lands on the focused window, or steps away from the
-thumbnail under the cursor.
+thumbnail under the cursor. Dismissing the overlay through SpaceHound brings
+the highlighted window to the front.
 
 ### System
 

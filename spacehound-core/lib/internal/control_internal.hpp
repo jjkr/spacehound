@@ -78,6 +78,9 @@ struct thumbnail_cycle_state final {
   // took the highlight elsewhere.
   double cursor_x = 0.0;
   double cursor_y = 0.0;
+  // The hovered thumbnail's center.
+  double target_x = 0.0;
+  double target_y = 0.0;
 
   [[nodiscard]] auto operator==(const thumbnail_cycle_state &) const -> bool = default;
 };
@@ -179,6 +182,9 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
 // Every on-screen window (desktop elements excluded), front to back.
 [[nodiscard]] auto load_on_screen_windows(std::vector<window_record> &out_windows) -> bool;
 
+// Brings `target_window` to the front (window-server fast path, AX fallback).
+[[nodiscard]] auto focus_window(const window_record &target_window, std::string_view display_uuid) -> bool;
+
 [[nodiscard]] auto find_frontmost_window_index_on_display(
     std::span<const window_record> windows,
     CGRect target_bounds) noexcept -> std::optional<std::size_t>;
@@ -251,6 +257,21 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
 // blocking it) until the thumbnail's frame has settled or ~1.5s pass, hovers
 // it, and seeds the cycle session so the next cycle hotkey steps on from it.
 void highlight_frontmost_window_when_overlay_appears();
+
+// Whether Mission Control / App Exposé is on screen: WindowManager then owns
+// a display-sized window above the normal layers. Cheap (no AX), so safe to
+// call from the event tap.
+[[nodiscard]] auto overlay_is_showing() -> bool;
+
+// Call right before posting the swipe that dismisses the overlay. The
+// overlay activates the thumbnail under the cursor as it closes, so when the
+// cycle session's highlight is current (cursor unmoved since the hover) this
+// parks the hidden cursor on that thumbnail, then schedules the cleanup on
+// the main queue: once the overlay is gone the cursor returns and reappears,
+// and the window is focused if the overlay did not do it. Otherwise the
+// thumbnail under the cursor, if any, is what the overlay picks anyway. Ends
+// the cycle session. No AX and no waiting, so safe from the event tap.
+void prepare_overlay_dismissal(cg::event_source_view synthetic_source);
 
 [[nodiscard]] auto execute_thumbnail_cycle_request(
     const control::window_focus_request &request,

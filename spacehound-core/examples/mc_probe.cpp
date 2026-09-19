@@ -492,9 +492,15 @@ auto run_spaces() -> int {
   return 0;
 }
 
-auto run_windows() -> int {
+// windows [--wm]: the Dock's (or WindowManager's) on-screen windows.
+auto run_windows(int argc, char **argv) -> int {
+  const bool window_manager = argc > 2 && std::string_view{argv[2]} == "--wm";
   wait_for_start();
-  const auto pid = require_dock();
+  auto pid = require_dock();
+  if (window_manager) {
+    pid = detail::window_manager_pid().value_or(pid);
+    std::cout << "WindowManager pid=" << pid << '\n';
+  }
   const auto info = cg::copy_window_info(
       static_cast<CGWindowListOption>(kCGWindowListOptionOnScreenOnly), kCGNullWindowID);
   if (!info) {
@@ -516,7 +522,8 @@ auto run_windows() -> int {
       if (const auto dictionary = dict.find<CFDictionaryRef>(cg::window_bounds_key)) {
         CGRectMakeWithDictionaryRepresentation(dictionary.get(), &bounds);
       }
-      std::cout << "dock wid=" << number_int64(dict, cg::window_number_key) << " layer=" << layer;
+      std::cout << "wid=" << number_int64(dict, cg::window_number_key) << " layer=" << layer
+                << " alpha=" << dict.find<CFNumberRef>(cf::string_view{kCGWindowAlpha}).get();
       print_frame(bounds);
       std::cout << '\n';
     } else if (layer == 0) {
@@ -556,7 +563,7 @@ int main(int argc, char **argv) {
     return run_spaces();
   }
   if (command == "windows") {
-    return run_windows();
+    return run_windows(argc, argv);
   }
 
   std::cerr << "usage: mc_probe dump|list|hit|hover-current|expose|keys|displays|spaces|windows ...\n";

@@ -262,6 +262,47 @@ auto dictionary_int64(cf::dictionary_view dictionary, cf::string_view key)
   return value;
 }
 
+// Calls `visit(pid, layer, bounds)` for each window owned by WindowManager in
+// the window list selected by `option`; stops when `visit` returns false.
+template <typename Visit>
+void for_each_window_manager_window(CGWindowListOption option, Visit &&visit) {
+  const auto windows = cg::copy_window_info(option, kCGNullWindowID);
+  if (!windows) {
+    return;
+  }
+
+  const auto windows_view = cf::view<CFArrayRef>{windows.get()};
+  const auto count = CFArrayGetCount(windows_view.get());
+  for (CFIndex index = 0; index < count; ++index) {
+    const auto window_dict_ref = cf::array_at<CFDictionaryRef>(windows_view, index);
+    if (!window_dict_ref) {
+      continue;
+    }
+
+    const auto window_dict = cf::dictionary_view{window_dict_ref};
+    const auto owner_name = window_dict.find<CFStringRef>(cg::window_owner_name_key);
+    if (!owner_name || cf::string_view{owner_name}.to_utf8() != "WindowManager") {
+      continue;
+    }
+
+    const auto pid = dictionary_int64(window_dict, cg::window_owner_pid_key);
+    if (!pid || *pid <= 0) {
+      continue;
+    }
+
+    CGRect bounds{};
+    if (const auto bounds_dict = window_dict.find<CFDictionaryRef>(cg::window_bounds_key)) {
+      (void)CGRectMakeWithDictionaryRepresentation(bounds_dict.get(), &bounds);
+    }
+
+    if (!visit(static_cast<pid_t>(*pid),
+               dictionary_int64(window_dict, cg::window_layer_key).value_or(0),
+               bounds)) {
+      return;
+    }
+  }
+}
+
 auto now_ms() -> std::uint64_t {
   return static_cast<std::uint64_t>(
       std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -395,11 +436,14 @@ auto plan_thumbnail_cycle(
     target_index = forward ? 0U : count - 1U;
   }
 
+  const auto target_center = rect_center(thumbnails[*target_index].frame);
   thumbnail_cycle_state next_state{
       .current_index = *target_index,
       .last_cycle_timestamp_ms = now_ms,
       .cursor_x = cursor ? cursor->x : 0.0,
       .cursor_y = cursor ? cursor->y : 0.0,
+      .target_x = target_center.x,
+      .target_y = target_center.y,
   };
   next_state.window_order.reserve(count);
   for (const auto &thumbnail : thumbnails) {
@@ -413,32 +457,38 @@ auto plan_thumbnail_cycle(
 }
 
 auto window_manager_pid() -> std::optional<pid_t> {
-  const auto windows = cg::copy_window_info(
-      static_cast<CGWindowListOption>(kCGWindowListOptionAll), kCGNullWindowID);
-  if (!windows) {
-    return std::nullopt;
+  std::optional<pid_t> found;
+  for_each_window_manager_window(
+      static_cast<CGWindowListOption>(kCGWindowListOptionAll),
+      [&](pid_t pid, std::int64_t, CGRect) {
+        found = pid;
+        return false;
+      });
+  return found;
+}
+
+auto overlay_is_showing() -> bool {
+  std::vector<display_record> displays;
+  if (!load_active_displays(displays)) {
+    return false;
   }
 
-  const auto windows_view = cf::view<CFArrayRef>{windows.get()};
-  const auto count = CFArrayGetCount(windows_view.get());
-  for (CFIndex index = 0; index < count; ++index) {
-    const auto window_dict_ref = cf::array_at<CFDictionaryRef>(windows_view, index);
-    if (!window_dict_ref) {
-      continue;
-    }
-
-    const auto window_dict = cf::dictionary_view{window_dict_ref};
-    const auto owner_name = window_dict.find<CFStringRef>(cg::window_owner_name_key);
-    if (!owner_name || cf::string_view{owner_name}.to_utf8() != "WindowManager") {
-      continue;
-    }
-
-    if (const auto pid = dictionary_int64(window_dict, cg::window_owner_pid_key); pid && *pid > 0) {
-      return static_cast<pid_t>(*pid);
-    }
-  }
-
-  return std::nullopt;
+  bool showing = false;
+  for_each_window_manager_window(
+      static_cast<CGWindowListOption>(kCGWindowListOptionOnScreenOnly),
+      [&](pid_t, std::int64_t layer, CGRect bounds) {
+        if (layer <= 0) {
+          return true;
+        }
+        for (const auto &display : displays) {
+          if (rects_match(bounds, display.bounds)) {
+            showing = true;
+            return false;
+          }
+        }
+        return true;
+      });
+  return showing;
 }
 
 auto current_space_id_for_display(std::string_view display_uuid) -> std::optional<std::int64_t> {
@@ -553,13 +603,16 @@ auto hover_and_remember(
     std::span<const thumbnail_record> thumbnails,
     std::size_t index,
     std::uint64_t timestamp_ms) -> bool {
-  if (!hover_thumbnail(synthetic_source, rect_center(thumbnails[index].frame))) {
+  const auto target_center = rect_center(thumbnails[index].frame);
+  if (!hover_thumbnail(synthetic_source, target_center)) {
     return false;
   }
 
   thumbnail_cycle_state state{
       .current_index = index,
       .last_cycle_timestamp_ms = timestamp_ms,
+      .target_x = target_center.x,
+      .target_y = target_center.y,
   };
   state.window_order.reserve(thumbnails.size());
   for (const auto &thumbnail : thumbnails) {
@@ -660,6 +713,108 @@ void highlight_frontmost_window_when_overlay_appears() {
       .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{overlay_poll_timeout_ms},
   };
   dispatch::to_main_after_ms(overlay_poll_interval_ms, poll_overlay_highlight, job);
+}
+
+namespace {
+
+constexpr long long dismissal_poll_interval_ms = 20;
+constexpr long long dismissal_poll_timeout_ms = 1000;
+
+// The cleanup after `prepare_overlay_dismissal` parked the cursor.
+struct overlay_dismissal_job final {
+  std::chrono::steady_clock::time_point deadline;
+  CGPoint original_cursor{};
+  CGWindowID window_id = 0;
+  std::string display_uuid;
+};
+
+void finish_overlay_dismissal(void *raw_job) {
+  std::unique_ptr<overlay_dismissal_job> job{static_cast<overlay_dismissal_job *>(raw_job)};
+
+  if (overlay_is_showing() && std::chrono::steady_clock::now() < job->deadline) {
+    dispatch::to_main_after_ms(dismissal_poll_interval_ms, finish_overlay_dismissal, job.release());
+    return;
+  }
+
+  (void)cg::warp_mouse_cursor_position(job->original_cursor);
+  (void)cg::show_cursor();
+
+  // The overlay normally activated the window itself; make sure.
+  std::vector<window_record> windows;
+  if (!load_on_screen_windows(windows)) {
+    return;
+  }
+  std::vector<display_record> displays;
+  const auto display = load_active_displays(displays)
+                           ? std::ranges::find(displays, job->display_uuid, &display_record::uuid)
+                           : displays.end();
+  if (display == displays.end()) {
+    return;
+  }
+  const auto frontmost = find_frontmost_window_index_on_display(std::span{windows}, display->bounds);
+  if (frontmost && windows[*frontmost].window_id == job->window_id) {
+    os_log_info(diagnostics::navigation_log(), "Overlay dismissal activated the highlighted window");
+    return;
+  }
+
+  const auto window = std::ranges::find(windows, job->window_id, &window_record::window_id);
+  if (window == windows.end()) {
+    os_log_debug(diagnostics::navigation_log(), "Overlay dismissal lost the highlighted window");
+    return;
+  }
+  const bool focused = focus_window(*window, job->display_uuid);
+  os_log_info(diagnostics::navigation_log(),
+              "Overlay dismissal %{public}s the highlighted window itself",
+              focused ? "focused" : "failed to focus");
+}
+
+}  // namespace
+
+void prepare_overlay_dismissal(cg::event_source_view synthetic_source) {
+  std::optional<thumbnail_cycle_state> state;
+  {
+    std::lock_guard lock(thumbnail_cycle_state_mutex);
+    state = thumbnail_cycle_state_cache;
+    thumbnail_cycle_state_cache.reset();
+  }
+
+  const auto cursor_event = cg::event::create(synthetic_source);
+  if (!state || !cursor_event) {
+    return;
+  }
+  const auto cursor = cursor_event.location();
+
+  const bool cursor_still = std::fabs(cursor.x - state->cursor_x) <= cursor_still_tolerance &&
+                            std::fabs(cursor.y - state->cursor_y) <= cursor_still_tolerance;
+  if (!cursor_still || state->current_index >= state->window_order.size() ||
+      now_ms() - state->last_cycle_timestamp_ms >= thumbnail_cycle_timeout_ms) {
+    os_log_debug(diagnostics::navigation_log(),
+                 "Overlay dismissal leaves the selection to the cursor");
+    return;
+  }
+
+  const auto active_uuid = active_display_identifier();
+  if (!active_uuid) {
+    return;
+  }
+
+  const bool hidden = cgs::set_cursor_in_background(true) == kCGErrorSuccess &&
+                      cg::hide_cursor() == kCGErrorSuccess;
+  if (cg::warp_mouse_cursor_position(CGPointMake(state->target_x, state->target_y)) !=
+      kCGErrorSuccess) {
+    if (hidden) {
+      (void)cg::show_cursor();
+    }
+    return;
+  }
+
+  auto *job = new overlay_dismissal_job{
+      .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{dismissal_poll_timeout_ms},
+      .original_cursor = cursor,
+      .window_id = state->window_order[state->current_index],
+      .display_uuid = *active_uuid,
+  };
+  dispatch::to_main_after_ms(dismissal_poll_interval_ms, finish_overlay_dismissal, job);
 }
 
 auto execute_thumbnail_cycle_request(

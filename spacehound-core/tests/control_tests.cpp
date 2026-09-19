@@ -577,6 +577,8 @@ TEST(control_tests, thumbnail_cycle_planner_starts_from_the_cursor_or_the_ends) 
               .last_cycle_timestamp_ms = 1000U,
               .cursor_x = 150.0,
               .cursor_y = 50.0,
+              .target_x = 250.0,
+              .target_y = 50.0,
           },
       }));
   EXPECT_EQ(
@@ -627,6 +629,8 @@ TEST(control_tests, thumbnail_cycle_planner_continues_by_window_id_and_wraps) {
               .last_cycle_timestamp_ms = 1500U,
               .cursor_x = 150.5,
               .cursor_y = 50.0,
+              .target_x = 50.0,
+              .target_y = 50.0,
           },
       }));
   EXPECT_EQ(

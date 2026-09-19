@@ -398,18 +398,23 @@ auto execute_system_ui_request(
   }
 
   const auto direction = toggle_direction(request, *state);
+  const bool dismisses_overlay =
+      (*state == detail::dock_view_state::mission_control &&
+       direction == gesture::direction::down) ||
+      (*state == detail::dock_view_state::expose && direction == gesture::direction::up);
+
+  if (dismisses_overlay) {
+    // The overlay activates the thumbnail under the cursor as it closes:
+    // put the (hidden) cursor on the highlighted one first.
+    detail::prepare_overlay_dismissal(synthetic_source);
+  }
+
   if (!gesture::post_swipe(synthetic_source, direction)) {
     return std::unexpected(runtime_error("Failed to synthesize the system UI gesture."));
   }
 
-  // Opening an overlay (up shows Mission Control, down App Exposé, from the
-  // hidden state): highlight the focused window once it has appeared.
-  const bool opens_overlay = *state == detail::dock_view_state::hidden ||
-                             (request.element == system_ui_element::mission_control &&
-                              direction == gesture::direction::up) ||
-                             (request.element == system_ui_element::expose &&
-                              direction == gesture::direction::down);
-  if (opens_overlay) {
+  if (*state == detail::dock_view_state::hidden) {
+    // Opening an overlay: highlight the focused window once it has appeared.
     detail::highlight_frontmost_window_when_overlay_appears();
   }
 

@@ -116,7 +116,11 @@ thumbnail tree belongs to the `WindowManager` process:
   space on the display are listed; only those of the current space are visible.
 
 The window-cycle hotkeys use this to hover thumbnails (see `lib/mission_control.cpp`
-and `examples/mc_probe.cpp`).
+and `examples/mc_probe.cpp`). While an overlay shows, WindowManager also owns a
+display-sized on-screen window above the normal layers, which is how the app tells
+that a swipe down is dismissing it. The overlay activates the thumbnail under the
+cursor as it closes, so a dismissal parks the hidden cursor on the highlighted
+thumbnail first.
 
 ### 2. Core Graphics / Quartz Event Services
 

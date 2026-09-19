@@ -303,43 +303,6 @@ void wait_for_active_display(std::string_view display_uuid, std::chrono::millise
   }
 }
 
-auto focus_window(const window_record &target_window, std::string_view display_uuid) -> bool {
-  if (target_window.pid <= 0) {
-    return false;
-  }
-
-  const auto app = ax::ui_element::create_application(target_window.pid);
-  if (!app) {
-    return false;
-  }
-
-  const auto window = find_target_ax_window(app.view(), target_window);
-  if (!window) {
-    return false;
-  }
-
-  using namespace std::chrono_literals;
-  const auto running_application =
-      ns::running_application::with_process_identifier(target_window.pid);
-  const bool needs_activation = running_application && !running_application.is_active();
-
-  // Fast path: tell the window server directly which window comes front (the
-  // key-window records make it key in-process), then raise it. No need to
-  // wait for the menu bar; `active_display_identifier` covers the lag.
-  if (needs_activation && cgs::set_front_window(target_window.pid, target_window.window_id)) {
-    (void)window.perform_action(ax::raise_action);
-    return true;
-  }
-
-  apply_window_focus(app.view(), window.view());
-  if (needs_activation && running_application.activate(ns::activate_ignoring_other_apps)) {
-    wait_for_active_display(display_uuid, 100ms);
-    apply_window_focus(app.view(), window.view());
-  }
-
-  return true;
-}
-
 auto find_window_index_by_id(
     std::span<const window_record> windows,
     CGWindowID window_id) noexcept -> std::optional<std::size_t> {
@@ -512,6 +475,43 @@ auto load_on_screen_windows(std::vector<window_record> &out_windows) -> bool {
         .bounds = bounds,
         .is_onscreen = dictionary_bool(window_dict, cg::window_is_onscreen_key, true),
     });
+  }
+
+  return true;
+}
+
+auto focus_window(const window_record &target_window, std::string_view display_uuid) -> bool {
+  if (target_window.pid <= 0) {
+    return false;
+  }
+
+  const auto app = ax::ui_element::create_application(target_window.pid);
+  if (!app) {
+    return false;
+  }
+
+  const auto window = find_target_ax_window(app.view(), target_window);
+  if (!window) {
+    return false;
+  }
+
+  using namespace std::chrono_literals;
+  const auto running_application =
+      ns::running_application::with_process_identifier(target_window.pid);
+  const bool needs_activation = running_application && !running_application.is_active();
+
+  // Fast path: tell the window server directly which window comes front (the
+  // key-window records make it key in-process), then raise it. No need to
+  // wait for the menu bar; `active_display_identifier` covers the lag.
+  if (needs_activation && cgs::set_front_window(target_window.pid, target_window.window_id)) {
+    (void)window.perform_action(ax::raise_action);
+    return true;
+  }
+
+  apply_window_focus(app.view(), window.view());
+  if (needs_activation && running_application.activate(ns::activate_ignoring_other_apps)) {
+    wait_for_active_display(display_uuid, 100ms);
+    apply_window_focus(app.view(), window.view());
   }
 
   return true;
