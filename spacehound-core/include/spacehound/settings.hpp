@@ -27,6 +27,7 @@ struct document final {
   bool tray_scroll_inverted = false;
   hotkey_map hotkeys;
   bool fast_swipe = true;
+  bool move_cursor_to_active_display = true;
 
   [[nodiscard]] auto operator==(const document &) const -> bool = default;
 };

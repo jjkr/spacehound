@@ -121,29 +121,12 @@ auto display_bounds_for_identifier(
   return false;
 }
 
-auto active_display_space_bounds(
-    detail::workspace_bounds &out_bounds,
-    std::optional<CGRect> &out_display_bounds) -> bool {
+// Looks up the current space index and space count for the display with the
+// given Spaces identifier (a display UUID, or "Main" in unified-spaces mode).
+auto space_bounds_for_display(
+    cf::string_view display_identifier,
+    detail::workspace_bounds &out_bounds) -> bool {
   const auto connection = cgs::main_connection_id();
-  const auto active_display = cgs::copy_active_menu_bar_display_identifier(connection);
-  if (!active_display) {
-    return false;
-  }
-
-  const auto active_display_utf8 = active_display.to_utf8();
-  if (!active_display_utf8) {
-    return false;
-  }
-
-  out_display_bounds.reset();
-  if (!detail::is_unified_spaces_display_identifier(*active_display_utf8)) {
-    CGRect display_bounds{};
-    if (!display_bounds_for_identifier(active_display.view(), display_bounds)) {
-      return false;
-    }
-    out_display_bounds = display_bounds;
-  }
-
   const auto managed_spaces = cgs::copy_managed_display_spaces(connection);
   if (!managed_spaces) {
     return false;
@@ -159,8 +142,8 @@ auto active_display_space_bounds(
     }
 
     const auto display_dict = cf::dictionary_view{display_dict_ref};
-    const auto display_identifier = display_dict.find<CFStringRef>(display_identifier_key);
-    if (!display_identifier || !active_display.equals(cf::string_view{display_identifier})) {
+    const auto entry_identifier = display_dict.find<CFStringRef>(display_identifier_key);
+    if (!entry_identifier || !display_identifier.equals(cf::string_view{entry_identifier})) {
       continue;
     }
 
@@ -202,6 +185,75 @@ auto active_display_space_bounds(
   return false;
 }
 
+// The display a workspace request operates on: its Spaces identifier plus, when
+// the cursor should be warped onto it first, its bounds. `warp_bounds` stays
+// empty in unified-spaces mode and when the request follows the cursor.
+struct workspace_display final {
+  cf::string identifier;
+  std::optional<CGRect> warp_bounds;
+};
+
+enum class workspace_display_error {
+  active_display_unavailable,
+  cursor_display_unavailable,
+};
+
+auto resolve_workspace_display(
+    const workspace_request &request,
+    cg::event_source_view synthetic_source)
+    -> std::expected<workspace_display, workspace_display_error> {
+  const auto connection = cgs::main_connection_id();
+  auto active_display = cgs::copy_active_menu_bar_display_identifier(connection);
+  if (!active_display) {
+    return std::unexpected(workspace_display_error::active_display_unavailable);
+  }
+
+  const auto active_display_utf8 = active_display.to_utf8();
+  if (!active_display_utf8) {
+    return std::unexpected(workspace_display_error::active_display_unavailable);
+  }
+
+  if (detail::is_unified_spaces_display_identifier(*active_display_utf8)) {
+    return workspace_display{.identifier = std::move(active_display)};
+  }
+
+  if (request.move_cursor_to_active_display) {
+    CGRect display_bounds{};
+    if (!display_bounds_for_identifier(active_display.view(), display_bounds)) {
+      return std::unexpected(workspace_display_error::active_display_unavailable);
+    }
+
+    return workspace_display{
+        .identifier = std::move(active_display),
+        .warp_bounds = display_bounds,
+    };
+  }
+
+  // Follow the cursor: switch spaces on whichever display it is on.
+  const auto cursor_event = cg::event::create(synthetic_source);
+  if (!cursor_event) {
+    return std::unexpected(workspace_display_error::cursor_display_unavailable);
+  }
+
+  std::vector<detail::display_record> displays;
+  if (!detail::load_active_displays(displays)) {
+    return std::unexpected(workspace_display_error::cursor_display_unavailable);
+  }
+
+  const auto cursor_display_index =
+      detail::find_display_index_containing_point(displays, cursor_event.location());
+  if (!cursor_display_index) {
+    return std::unexpected(workspace_display_error::cursor_display_unavailable);
+  }
+
+  auto identifier = cf::string::from_utf8(displays[*cursor_display_index].uuid);
+  if (!identifier) {
+    return std::unexpected(workspace_display_error::cursor_display_unavailable);
+  }
+
+  return workspace_display{.identifier = std::move(identifier)};
+}
+
 auto ensure_accessibility_permission() -> std::expected<void, error> {
   if (ax::is_process_trusted()) {
     return {};
@@ -231,10 +283,19 @@ auto execute_workspace_request(
     return std::unexpected(invalid_request_error("Workspace indices are 1-based."));
   }
 
+  const auto display = resolve_workspace_display(request, synthetic_source);
+  if (!display) {
+    switch (display.error()) {
+      case workspace_display_error::active_display_unavailable:
+        return std::unexpected(state_error("Failed to determine the active display."));
+      case workspace_display_error::cursor_display_unavailable:
+        return std::unexpected(state_error("Failed to determine the display under the cursor."));
+    }
+  }
+
   detail::workspace_bounds bounds{};
-  std::optional<CGRect> display_bounds;
-  if (!active_display_space_bounds(bounds, display_bounds)) {
-    return std::unexpected(state_error("Failed to determine the active display workspace state."));
+  if (!space_bounds_for_display(display->identifier.view(), bounds)) {
+    return std::unexpected(state_error("Failed to determine the display workspace state."));
   }
 
   const auto motion =
@@ -243,8 +304,8 @@ auto execute_workspace_request(
     return {};
   }
 
-  if (display_bounds &&
-      !detail::ensure_cursor_on_display(synthetic_source, *display_bounds)) {
+  if (display->warp_bounds &&
+      !detail::ensure_cursor_on_display(synthetic_source, *display->warp_bounds)) {
     return std::unexpected(runtime_error("Failed to move the cursor to the active display."));
   }
 

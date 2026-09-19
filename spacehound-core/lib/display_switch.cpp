@@ -123,32 +123,6 @@ auto dictionary_rect(
   return CGRectMakeWithDictionaryRepresentation(bounds.get(), &out_rect) != 0;
 }
 
-auto load_active_displays(std::vector<display_record> &out_displays) -> bool {
-  std::vector<CGDirectDisplayID> display_ids;
-  if (cg::active_displays(display_ids) != kCGErrorSuccess || display_ids.empty()) {
-    return false;
-  }
-
-  out_displays.clear();
-  out_displays.reserve(display_ids.size());
-  for (const auto display_id : display_ids) {
-    const auto uuid = cg::display_uuid_string(display_id);
-    const auto utf8 = uuid.to_utf8();
-    if (!utf8) {
-      continue;
-    }
-
-    out_displays.push_back(display_record{
-        .display_id = display_id,
-        .uuid = *utf8,
-        .bounds = cg::display_bounds(display_id),
-    });
-  }
-
-  sort_displays_left_to_right(out_displays);
-  return !out_displays.empty();
-}
-
 auto load_active_display_uuid() -> std::optional<std::string> {
   const auto active_display =
       cgs::copy_active_menu_bar_display_identifier(cgs::main_connection_id());
@@ -440,6 +414,45 @@ auto find_current_display_index(
 
   return std::nullopt;
 }
+
+auto find_display_index_containing_point(
+    std::span<const display_record> displays,
+    CGPoint point) noexcept -> std::optional<std::size_t> {
+  for (std::size_t index = 0; index < displays.size(); ++index) {
+    if (rect_contains_point(displays[index].bounds, point)) {
+      return index;
+    }
+  }
+
+  return std::nullopt;
+}
+
+auto load_active_displays(std::vector<display_record> &out_displays) -> bool {
+  std::vector<CGDirectDisplayID> display_ids;
+  if (cg::active_displays(display_ids) != kCGErrorSuccess || display_ids.empty()) {
+    return false;
+  }
+
+  out_displays.clear();
+  out_displays.reserve(display_ids.size());
+  for (const auto display_id : display_ids) {
+    const auto uuid = cg::display_uuid_string(display_id);
+    const auto utf8 = uuid.to_utf8();
+    if (!utf8) {
+      continue;
+    }
+
+    out_displays.push_back(display_record{
+        .display_id = display_id,
+        .uuid = *utf8,
+        .bounds = cg::display_bounds(display_id),
+    });
+  }
+
+  sort_displays_left_to_right(out_displays);
+  return !out_displays.empty();
+}
+
 
 auto plan_display_request(
     const control::display_request &request,

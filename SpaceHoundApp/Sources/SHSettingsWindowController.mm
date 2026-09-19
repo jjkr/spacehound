@@ -564,6 +564,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 @property(nonatomic, strong) NSSwitch *betaUpdatesButton;
 @property(nonatomic, strong) NSView *betaUpdatesRow;
 @property(nonatomic, strong) NSSwitch *workspaceWrapButton;
+@property(nonatomic, strong) NSSwitch *moveCursorButton;
 @property(nonatomic, strong) NSSwitch *displayWrapButton;
 @property(nonatomic, strong) NSSwitch *trayScrollButton;
 @property(nonatomic, strong) NSSwitch *trayScrollInvertedButton;
@@ -636,6 +637,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   self.betaUpdatesButton.target = self;
   self.betaUpdatesButton.action = @selector(betaUpdatesChanged:);
   self.workspaceWrapButton = [self makeSwitch];
+  self.moveCursorButton = [self makeSwitch];
   self.displayWrapButton = [self makeSwitch];
   self.trayScrollButton = [self makeSwitch];
   self.trayScrollButton.target = self;
@@ -660,6 +662,10 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     [self toggleRowForSwitch:self.workspaceWrapButton
                        title:@"Wrap workspace navigation"
                     subtitle:@"Loop back to the first workspace after the last."],
+    [self toggleRowForSwitch:self.moveCursorButton
+                       title:@"Move cursor to the focused display"
+                    subtitle:@"Jump the cursor to the display with the focused window before switching "
+                             @"workspaces. When off, workspaces switch on the display under the cursor."],
     [self toggleRowForSwitch:self.displayWrapButton
                        title:@"Wrap display navigation"
                     subtitle:@"Loop across the left and right display edges."],
@@ -1042,6 +1048,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   SHSettingsDocument *document = [[SHSettingsDocument alloc] init];
   document.version = @"1.0";
   document.workspaceWrap = (self.workspaceWrapButton.state == NSControlStateValueOn);
+  document.moveCursorToActiveDisplay = (self.moveCursorButton.state == NSControlStateValueOn);
   document.displayWrap = (self.displayWrapButton.state == NSControlStateValueOn);
   document.trayScroll = (self.trayScrollButton.state == NSControlStateValueOn);
   document.trayScrollInverted = (self.trayScrollInvertedButton.state == NSControlStateValueOn);
@@ -1231,6 +1238,8 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 - (void)applyDocumentToControls:(SHSettingsDocument *)document {
   self.workspaceWrapButton.state = document.workspaceWrap ? NSControlStateValueOn : NSControlStateValueOff;
+  self.moveCursorButton.state =
+      document.moveCursorToActiveDisplay ? NSControlStateValueOn : NSControlStateValueOff;
   self.displayWrapButton.state = document.displayWrap ? NSControlStateValueOn : NSControlStateValueOff;
   self.trayScrollButton.state = document.trayScroll ? NSControlStateValueOn : NSControlStateValueOff;
   self.trayScrollInvertedButton.state =

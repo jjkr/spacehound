@@ -21,6 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL trayScroll;
 @property(nonatomic, assign) BOOL trayScrollInverted;
 @property(nonatomic, assign) BOOL fastSwipe;
+@property(nonatomic, assign) BOOL moveCursorToActiveDisplay;
 @property(nonatomic, copy) NSArray<SHHotkeyItem *> *hotkeys;
 
 @end

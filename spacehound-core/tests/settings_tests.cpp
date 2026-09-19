@@ -92,6 +92,7 @@ TEST(settings_tests, loads_document_with_legacy_telemetry_field) {
           "custom_action": { "key": "x", "modifiers": ["cmd", "shift"], "enabled": false }
         },
         "fastSwipe": false,
+        "moveCursorToActiveDisplay": false,
         "telemetryEnabled": false
       })json");
 
@@ -104,6 +105,7 @@ TEST(settings_tests, loads_document_with_legacy_telemetry_field) {
   EXPECT_FALSE(loaded->tray_scroll);
   EXPECT_TRUE(loaded->tray_scroll_inverted);
   EXPECT_FALSE(loaded->fast_swipe);
+  EXPECT_FALSE(loaded->move_cursor_to_active_display);
   ASSERT_TRUE(loaded->hotkeys.contains("switch_space_left"));
   ASSERT_TRUE(loaded->hotkeys.at("switch_space_left").has_value());
   EXPECT_EQ(loaded->hotkeys.at("switch_space_left")->key, "h");
@@ -186,6 +188,7 @@ TEST(settings_tests, missing_optional_booleans_use_compatibility_defaults) {
   EXPECT_TRUE(loaded->tray_scroll);
   EXPECT_FALSE(loaded->tray_scroll_inverted);
   EXPECT_TRUE(loaded->fast_swipe);
+  EXPECT_TRUE(loaded->move_cursor_to_active_display);
 }
 
 TEST(settings_tests, missing_known_hotkeys_are_backfilled_from_defaults) {

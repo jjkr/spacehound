@@ -86,6 +86,12 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
     std::span<const display_record> displays,
     std::string_view active_display_uuid) noexcept -> std::optional<std::size_t>;
 
+[[nodiscard]] auto find_display_index_containing_point(
+    std::span<const display_record> displays,
+    CGPoint point) noexcept -> std::optional<std::size_t>;
+
+[[nodiscard]] auto load_active_displays(std::vector<display_record> &out_displays) -> bool;
+
 [[nodiscard]] auto plan_display_request(
     const control::display_request &request,
     std::size_t current_index,

@@ -31,6 +31,7 @@ struct workspace_request final {
   workspace_action action = workspace_action::left;
   std::size_t index = 0;
   bool wrap = false;
+  bool move_cursor_to_active_display = true;
 
   [[nodiscard]] auto operator==(const workspace_request &) const -> bool = default;
 };

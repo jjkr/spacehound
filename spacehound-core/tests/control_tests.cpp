@@ -134,6 +134,22 @@ TEST(control_tests, main_display_identifier_represents_unified_spaces) {
       "37D8832A-2D66-02CA-B9F7-8F30A301B230"));
 }
 
+TEST(control_tests, display_index_containing_point_uses_half_open_bounds) {
+  const std::vector<detail::display_record> displays{
+      detail::display_record{.display_id = 1, .uuid = "left", .bounds = make_rect(0, 0, 1000, 800)},
+      detail::display_record{.display_id = 2, .uuid = "right", .bounds = make_rect(1000, -100, 1200, 900)},
+  };
+
+  EXPECT_EQ(detail::find_display_index_containing_point(displays, CGPointMake(10, 10)), 0U);
+  EXPECT_EQ(detail::find_display_index_containing_point(displays, CGPointMake(1500, -50)), 1U);
+  // The shared edge belongs to exactly one display.
+  EXPECT_EQ(detail::find_display_index_containing_point(displays, CGPointMake(1000, 10)), 1U);
+  EXPECT_EQ(detail::find_display_index_containing_point(displays, CGPointMake(999.5, 10)), 0U);
+  EXPECT_EQ(detail::find_display_index_containing_point(displays, CGPointMake(-1, 10)), std::nullopt);
+  EXPECT_EQ(detail::find_display_index_containing_point(displays, CGPointMake(500, 900)), std::nullopt);
+  EXPECT_EQ(detail::find_display_index_containing_point({}, CGPointMake(0, 0)), std::nullopt);
+}
+
 TEST(control_tests, display_switch_plans_relative_and_numbered_targets) {
   const control::display_request left{
       .action = control::display_action::left,

@@ -444,6 +444,7 @@ auto compile_action(
     result.request = control::workspace_request{
         .action = control::workspace_action::left,
         .wrap = document.workspace_wrap,
+        .move_cursor_to_active_display = document.move_cursor_to_active_display,
     };
     return result;
   }
@@ -452,6 +453,7 @@ auto compile_action(
     result.request = control::workspace_request{
         .action = control::workspace_action::right,
         .wrap = document.workspace_wrap,
+        .move_cursor_to_active_display = document.move_cursor_to_active_display,
     };
     return result;
   }
@@ -467,6 +469,7 @@ auto compile_action(
           .action = control::workspace_action::go_to,
           .index = workspace_index,
           .wrap = document.workspace_wrap,
+          .move_cursor_to_active_display = document.move_cursor_to_active_display,
       };
       return result;
     }
