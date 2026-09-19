@@ -322,7 +322,7 @@ auto parse_document(const json &root, const std::filesystem::path &path)
     return std::unexpected(status.error());
   }
   if (auto status = parse_optional_bool(
-          root, "moveCursorToActiveDisplay", true, result.move_cursor_to_active_display, path);
+          root, "workspaceTargetsFocusedDisplay", true, result.workspace_targets_focused_display, path);
       !status) {
     return std::unexpected(status.error());
   }

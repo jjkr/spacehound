@@ -69,6 +69,13 @@ auto runtime_error(std::string message) -> error {
   return make_error(error_code::runtime_error, std::move(message));
 }
 
+auto rect_center(CGRect rect) noexcept -> CGPoint {
+  return CGPoint{
+      .x = rect.origin.x + rect.size.width / 2.0,
+      .y = rect.origin.y + rect.size.height / 2.0,
+  };
+}
+
 auto error_code_name(error_code code) noexcept -> const char * {
   switch (code) {
     case error_code::permission_denied:
@@ -186,11 +193,13 @@ auto space_bounds_for_display(
 }
 
 // The display a workspace request operates on: its Spaces identifier plus, when
-// the cursor should be warped onto it first, its bounds. `warp_bounds` stays
-// empty in unified-spaces mode and when the request follows the cursor.
+// it is not the display under the cursor, a point on it to report the gesture
+// at. `gesture_location` stays empty in unified-spaces mode and when the
+// request follows the cursor, in which case the gesture lands wherever the
+// cursor is.
 struct workspace_display final {
   cf::string identifier;
-  std::optional<CGRect> warp_bounds;
+  std::optional<CGPoint> gesture_location;
 };
 
 enum class workspace_display_error {
@@ -217,7 +226,7 @@ auto resolve_workspace_display(
     return workspace_display{.identifier = std::move(active_display)};
   }
 
-  if (request.move_cursor_to_active_display) {
+  if (request.target_focused_display) {
     CGRect display_bounds{};
     if (!display_bounds_for_identifier(active_display.view(), display_bounds)) {
       return std::unexpected(workspace_display_error::active_display_unavailable);
@@ -225,7 +234,7 @@ auto resolve_workspace_display(
 
     return workspace_display{
         .identifier = std::move(active_display),
-        .warp_bounds = display_bounds,
+        .gesture_location = rect_center(display_bounds),
     };
   }
 
@@ -266,15 +275,17 @@ auto ensure_accessibility_permission() -> std::expected<void, error> {
 auto post_swipe_sequence(
     cg::event_source_view synthetic_source,
     gesture::direction direction,
-    std::size_t repeat_count) -> bool {
+    std::size_t repeat_count,
+    const gesture::swipe_options &options) -> bool {
   for (std::size_t index = 0; index < repeat_count; ++index) {
-    if (!gesture::post_swipe(synthetic_source, direction)) {
+    if (!gesture::post_swipe(synthetic_source, direction, kCGHIDEventTap, options)) {
       return false;
     }
   }
 
   return true;
 }
+
 
 auto execute_workspace_request(
     const workspace_request &request,
@@ -304,12 +315,9 @@ auto execute_workspace_request(
     return {};
   }
 
-  if (display->warp_bounds &&
-      !detail::ensure_cursor_on_display(synthetic_source, *display->warp_bounds)) {
-    return std::unexpected(runtime_error("Failed to move the cursor to the active display."));
-  }
-
-  if (!post_swipe_sequence(synthetic_source, motion.direction, motion.repeat_count)) {
+  const gesture::swipe_options swipe_options{.location = display->gesture_location};
+  if (!post_swipe_sequence(
+          synthetic_source, motion.direction, motion.repeat_count, swipe_options)) {
     return std::unexpected(runtime_error("Failed to synthesize the workspace gesture sequence."));
   }
 

@@ -57,7 +57,7 @@ it is launched outside the app.
     }
   },
   "fastSwipe": true,
-  "moveCursorToActiveDisplay": true,
+  "workspaceTargetsFocusedDisplay": true,
   "moveCursorToTargetDisplay": true
 }
 ```
@@ -125,19 +125,19 @@ Writers should emit the complete set of known action ids. Readers should tolerat
 
 Controls fast gesture activation for swipe-based actions.
 
-### `moveCursorToActiveDisplay`
+### `workspaceTargetsFocusedDisplay`
 
 - type: boolean
 - required: no (readers default to `true` when absent)
 - default when generating a fresh file: `true`
 
 Controls which display a workspace switch (`switch_space_*`) targets when
-displays have separate Spaces. When `true`, the cursor is moved onto the display
-that owns the focused window before the switch, so that display changes Space.
-When `false`, the cursor is left alone and the Space changes on whichever display
-the cursor is currently on; wrapping and numbered targets are computed against
-that display. The setting has no effect when displays share a single set of
-Spaces.
+displays have separate Spaces. When `true`, the Space changes on the display
+that owns the focused window; the synthetic gesture is reported at that display
+so the cursor is never moved. When `false`, the Space changes on whichever
+display the cursor is currently on. Wrapping and numbered targets are computed
+against the chosen display either way. The setting has no effect when displays
+share a single set of Spaces.
 
 ### `moveCursorToTargetDisplay`
 
@@ -309,7 +309,7 @@ The canonical default document is:
     "expose_toggle": { "key": "e", "modifiers": ["option"], "enabled": true }
   },
   "fastSwipe": true,
-  "moveCursorToActiveDisplay": true,
+  "workspaceTargetsFocusedDisplay": true,
   "moveCursorToTargetDisplay": true
 }
 ```
@@ -364,7 +364,7 @@ Readers should enforce at least these rules:
 
 - top-level value must be an object
 - `version` must be a string
-- `workspaceWrap`, `displayWrap`, `trayScroll`, `trayScrollInverted`, `fastSwipe`, `moveCursorToActiveDisplay`, and `moveCursorToTargetDisplay` must be booleans
+- `workspaceWrap`, `displayWrap`, `trayScroll`, `trayScrollInverted`, `fastSwipe`, `workspaceTargetsFocusedDisplay`, and `moveCursorToTargetDisplay` must be booleans
 - `hotkeys` must be an object
 - each `hotkeys` value must be either `null` or a valid `hotkeySetting`
 - `hotkeySetting.key` must be a non-empty string
@@ -402,7 +402,7 @@ This is a practical draft schema for validation tooling. It encodes the canonica
     "trayScroll": { "type": "boolean" },
     "trayScrollInverted": { "type": "boolean" },
     "fastSwipe": { "type": "boolean" },
-    "moveCursorToActiveDisplay": { "type": "boolean" },
+    "workspaceTargetsFocusedDisplay": { "type": "boolean" },
     "moveCursorToTargetDisplay": { "type": "boolean" },
     "hotkeys": {
       "type": "object",

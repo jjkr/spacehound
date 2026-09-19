@@ -75,7 +75,7 @@ auto make_default_settings_dictionary() -> NSDictionary<NSString *, id> * {
     @"trayScrollInverted" : @NO,
     @"hotkeys" : @{},
     @"fastSwipe" : @YES,
-    @"moveCursorToActiveDisplay" : @YES,
+    @"workspaceTargetsFocusedDisplay" : @YES,
     @"moveCursorToTargetDisplay" : @YES,
   };
 }
@@ -235,7 +235,7 @@ auto normalized_modifiers(NSString *value, NSError **error) -> NSArray<NSString 
   document.trayScroll = parsed.tray_scroll;
   document.trayScrollInverted = parsed.tray_scroll_inverted;
   document.fastSwipe = parsed.fast_swipe;
-  document.moveCursorToActiveDisplay = parsed.move_cursor_to_active_display;
+  document.workspaceTargetsFocusedDisplay = parsed.workspace_targets_focused_display;
   document.moveCursorToTargetDisplay = parsed.move_cursor_to_target_display;
 
   NSMutableArray<SHHotkeyItem *> *hotkeys = [NSMutableArray arrayWithCapacity:std::size(known_hotkeys)];
@@ -335,7 +335,7 @@ auto normalized_modifiers(NSString *value, NSError **error) -> NSArray<NSString 
   root[@"trayScroll"] = @(document.trayScroll);
   root[@"trayScrollInverted"] = @(document.trayScrollInverted);
   root[@"fastSwipe"] = @(document.fastSwipe);
-  root[@"moveCursorToActiveDisplay"] = @(document.moveCursorToActiveDisplay);
+  root[@"workspaceTargetsFocusedDisplay"] = @(document.workspaceTargetsFocusedDisplay);
   root[@"moveCursorToTargetDisplay"] = @(document.moveCursorToTargetDisplay);
   [root removeObjectForKey:@"telemetryEnabled"];
   root[@"hotkeys"] = hotkeys;

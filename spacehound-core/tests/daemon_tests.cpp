@@ -105,7 +105,7 @@ TEST(daemon_tests, compile_runtime_config_maps_supported_requests_and_inert_acti
   document.fast_swipe = true;
   document.workspace_wrap = true;
   document.display_wrap = true;
-  document.move_cursor_to_active_display = false;
+  document.workspace_targets_focused_display = false;
   document.move_cursor_to_target_display = false;
   document.hotkeys["switch_space_left"] = settings::hotkey_setting{
       .key = "h",
@@ -169,12 +169,12 @@ TEST(daemon_tests, compile_runtime_config_maps_supported_requests_and_inert_acti
               .action = control::workspace_action::go_to,
               .index = 3,
               .wrap = true,
-              .move_cursor_to_active_display = false,
+              .target_focused_display = false,
           },
           control::workspace_request{
               .action = control::workspace_action::left,
               .wrap = true,
-              .move_cursor_to_active_display = false,
+              .target_focused_display = false,
           },
           control::window_focus_request{
               .direction = control::window_focus_direction::next,

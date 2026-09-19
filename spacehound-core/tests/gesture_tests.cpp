@@ -156,6 +156,19 @@ TEST(gesture_tests, create_swipe_event_returns_populated_event) {
   EXPECT_NEAR(event.double_field(cg::gesture_delta_field), -0.0001, 1e-6);
 }
 
+TEST(gesture_tests, create_swipe_event_reports_requested_location_after_reconstruction) {
+  const gesture::swipe_options options{.location = CGPointMake(-3200.0, 480.0)};
+  for (const auto phase : {gesture::phase::begin, gesture::phase::update, gesture::phase::end}) {
+    const auto event = gesture::create_swipe_event(
+        cg::event_source_view{}, phase, gesture::direction::right, options);
+    ASSERT_TRUE(event);
+
+    const auto location = event.location();
+    EXPECT_DOUBLE_EQ(location.x, -3200.0);
+    EXPECT_DOUBLE_EQ(location.y, 480.0);
+  }
+}
+
 TEST(gesture_tests, create_swipe_event_embeds_raw_gesture_payload) {
   const auto begin_event = gesture::create_swipe_event(
       cg::event_source_view{},

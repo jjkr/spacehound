@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -34,6 +35,10 @@ struct swipe_options final {
   double update_delta = 0.0001;
   double end_delta = 1.0;
   double momentum = 29100.0;
+  /// Where the gesture is reported to happen. The Dock switches Spaces on the
+  /// display containing this point, so setting it targets a display without
+  /// moving the cursor. Defaults to the current cursor location.
+  std::optional<CGPoint> location;
 };
 
 namespace detail {
@@ -286,6 +291,12 @@ inline void populate_swipe_event(
   auto event = cg::event::create(source);
   if (!event) {
     return {};
+  }
+
+  // Must precede the raw payload step, which re-creates the event from its
+  // serialized form.
+  if (options.location) {
+    event.set_location(*options.location);
   }
 
   populate_swipe_event(event.view(), gesture_phase, swipe_direction, options);

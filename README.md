@@ -134,7 +134,7 @@ without losing its binding.
 | **Launch at login** | Automatically open SpaceHound when you sign in. | Off |
 | **Receive beta updates** | Opt into beta releases, which ship before production releases and are signed and notarized the same way. | Off |
 | **Wrap workspace navigation** | Loop back to the first Space after the last (and vice-versa). | Off |
-| **Move cursor to the focused display** | Before switching Spaces, jump the cursor to the display with the focused window. When off, Spaces switch on the display under the cursor. | On |
+| **Switch workspaces on the focused display** | Change the Space on the display with the focused window (the cursor is not moved). When off, the Space changes on the display under the cursor. | On |
 | **Wrap display navigation** | Loop across the left and right display edges. | Off |
 | **Move cursor to the target display** | Jump the cursor to the destination display when switching displays. When off, the cursor stays where it is. | On |
 | **Enable tray scroll switching** | Scroll over the menu bar icon to change Spaces. | On |
