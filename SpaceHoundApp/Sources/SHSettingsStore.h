@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Joe Kramer
+// SPDX-License-Identifier: Apache-2.0
+
 #import <Cocoa/Cocoa.h>
 
 NS_ASSUME_NONNULL_BEGIN

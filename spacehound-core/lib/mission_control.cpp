@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Joe Kramer
+// SPDX-License-Identifier: Apache-2.0
+
 // Window cycling while Mission Control or App Exposé is showing: instead of
 // focusing windows, move the overlay's hover highlight between thumbnails.
 //

@@ -1,4 +1,6 @@
 #!/bin/zsh
+# SPDX-FileCopyrightText: 2026 Joe Kramer
+# SPDX-License-Identifier: Apache-2.0
 
 # Prints the directory containing the Sparkle CLI tools (generate_appcast,
 # sign_update) that match the version pinned in project.yml.

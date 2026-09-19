@@ -1,4 +1,6 @@
 #!/usr/bin/env swift
+// SPDX-FileCopyrightText: 2026 Joe Kramer
+// SPDX-License-Identifier: Apache-2.0
 
 // Moves one appcast item from the beta channel to the default (production)
 // channel by deleting its <sparkle:channel> element, and removes older beta

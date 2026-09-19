@@ -1,4 +1,6 @@
 #!/bin/zsh
+# SPDX-FileCopyrightText: 2026 Joe Kramer
+# SPDX-License-Identifier: Apache-2.0
 
 # Downloads the published Sparkle feed so a release can be merged into it.
 #

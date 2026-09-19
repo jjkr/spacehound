@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Joe Kramer
+// SPDX-License-Identifier: Apache-2.0
+
 #include <spacehound/ns.hpp>
 
 #import <AppKit/AppKit.h>

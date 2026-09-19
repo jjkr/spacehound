@@ -1,4 +1,6 @@
 #!/usr/bin/env swift
+// SPDX-FileCopyrightText: 2026 Joe Kramer
+// SPDX-License-Identifier: Apache-2.0
 
 import CryptoKit
 import Foundation

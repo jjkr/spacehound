@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Joe Kramer
+// SPDX-License-Identifier: Apache-2.0
+
 #include "internal/control_internal.hpp"
 #include "internal/logging.hpp"
 

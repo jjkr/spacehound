@@ -190,3 +190,11 @@ use **Reveal in Finder** in Settings to find it.
 Building from source and architecture notes are documented in
 [DEVELOPMENT.md](DEVELOPMENT.md). Maintainers should use
 [RELEASING.md](RELEASING.md) when publishing a release.
+
+## License
+
+SpaceHound is licensed under the [Apache License, Version 2.0](LICENSE). See
+[NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for
+attribution. "SpaceHound" and the SpaceHound logo are trademarks of Joe Kramer;
+[TRADEMARKS.md](TRADEMARKS.md) explains what that means for forks and
+redistribution.

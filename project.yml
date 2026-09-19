@@ -40,6 +40,12 @@ targets:
       - path: spacehound-core/lib/version.cpp
       - path: SpaceHoundApp/Resources
         buildPhase: resources
+      - path: LICENSE
+        buildPhase: resources
+      - path: NOTICE
+        buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: SpaceHound

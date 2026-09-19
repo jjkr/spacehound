@@ -1,4 +1,6 @@
 #!/bin/zsh
+# SPDX-FileCopyrightText: 2026 Joe Kramer
+# SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
 
@@ -166,6 +168,13 @@ if [[ "${BUILT_FEED_URL}" != "${SPARKLE_FEED_URL}" ||
   echo "error: exported app does not contain the requested Sparkle and Sentry configuration" >&2
   exit 1
 fi
+
+for notice in LICENSE NOTICE THIRD_PARTY_NOTICES.md; do
+  if [[ ! -f "${APP_PATH}/Contents/Resources/${notice}" ]]; then
+    echo "error: exported app does not contain ${notice}" >&2
+    exit 1
+  fi
+done
 
 ZIP_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-arm64.zip"
 DMG_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-arm64.dmg"

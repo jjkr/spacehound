@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Joe Kramer
+# SPDX-License-Identifier: Apache-2.0
+
 if(NOT DEFINED PROJECT_BINARY_DIR)
   message(FATAL_ERROR "PROJECT_BINARY_DIR is required.")
 endif()

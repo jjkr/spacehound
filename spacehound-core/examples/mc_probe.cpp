@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Joe Kramer
+// SPDX-License-Identifier: Apache-2.0
+
 // Probe for the Mission Control / App Exposé hover work: inspects the
 // WindowManager accessibility tree and exercises the thumbnail enumeration and
 // hover path from the core. Run from a terminal trusted for Accessibility.

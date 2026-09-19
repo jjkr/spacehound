@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Joe Kramer
+# SPDX-License-Identifier: Apache-2.0
+
 cmake_minimum_required(VERSION 3.30)
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum supported macOS version" FORCE)
