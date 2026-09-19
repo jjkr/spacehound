@@ -3,9 +3,8 @@
 #import "SHPermissions.h"
 #import "SHRuntimeHost.h"
 #import "SHSettingsWindowController.h"
+#import "SHUpdateChannel.h"
 #import <Sparkle/Sparkle.h>
-
-static NSString *const SHReceiveBetaUpdatesKey = @"SHReceiveBetaUpdates";
 
 @interface AppDelegate () <SPUUpdaterDelegate>
 
@@ -17,7 +16,6 @@ static NSString *const SHReceiveBetaUpdatesKey = @"SHReceiveBetaUpdates";
 @property(nonatomic, strong) SHSettingsWindowController *settingsWindowController;
 @property(nonatomic, strong, nullable) NSTimer *accessibilityPollTimer;
 @property(nonatomic, strong, nullable) SPUStandardUpdaterController *updaterController;
-@property(nonatomic, strong, nullable) NSMenuItem *receiveBetaUpdatesItem;
 
 @end
 
@@ -80,15 +78,6 @@ static NSString *const SHReceiveBetaUpdatesKey = @"SHReceiveBetaUpdates";
   [self.statusMenu addItem:settingsItem];
 
   if (self.updaterController != nil) {
-    self.receiveBetaUpdatesItem =
-        [[NSMenuItem alloc] initWithTitle:@"Receive Beta Updates"
-                                  action:@selector(toggleBetaUpdates:)
-                           keyEquivalent:@""];
-    self.receiveBetaUpdatesItem.target = self;
-    self.receiveBetaUpdatesItem.state =
-        [self receivesBetaUpdates] ? NSControlStateValueOn : NSControlStateValueOff;
-    [self.statusMenu addItem:self.receiveBetaUpdatesItem];
-
     NSMenuItem *checkForUpdatesItem =
         [[NSMenuItem alloc] initWithTitle:@"Check for Updates…"
                                    action:@selector(checkForUpdates:)
@@ -123,6 +112,11 @@ static NSString *const SHReceiveBetaUpdatesKey = @"SHReceiveBetaUpdates";
   self.settingsWindowController.inputSuspensionHandler = ^(BOOL suspended) {
     [weakWindowSelf.runtimeHost setInputSuspended:suspended];
   };
+  self.settingsWindowController.updateChannelSelectable = (self.updaterController != nil);
+  self.settingsWindowController.updateChannelChangedHandler = ^{
+    // Re-evaluate the feed against the new channel set right away.
+    [weakWindowSelf.updaterController.updater resetUpdateCycle];
+  };
 
   [self startRuntimeOrRequestAccess];
   os_log_info(SHLogLifecycle(), "Application launch setup completed");
@@ -151,44 +145,11 @@ static NSString *const SHReceiveBetaUpdatesKey = @"SHReceiveBetaUpdates";
 
 #pragma mark - Update channel
 
-- (BOOL)receivesBetaUpdates {
-  return [[NSUserDefaults standardUserDefaults] boolForKey:SHReceiveBetaUpdatesKey];
-}
-
 - (NSSet<NSString *> *)allowedChannelsForUpdater:(SPUUpdater *)updater {
   (void)updater;
   // Production items carry no channel and are always eligible. Opting in adds
   // the beta channel, and Sparkle offers the highest version across both.
-  return [self receivesBetaUpdates] ? [NSSet setWithObject:@"beta"] : [NSSet set];
-}
-
-- (void)toggleBetaUpdates:(id)sender {
-  (void)sender;
-  const BOOL enabling = ![self receivesBetaUpdates];
-  if (enabling) {
-    [NSApp activateIgnoringOtherApps:YES];
-    NSAlert *alert = [[NSAlert alloc] init];
-    alert.alertStyle = NSAlertStyleWarning;
-    alert.messageText = @"Receive beta updates?";
-    alert.informativeText =
-        @"Beta updates are signed and notarized like production releases, but may contain "
-         "unfinished changes. You can return to production updates from this menu at any time.";
-    [alert addButtonWithTitle:@"Receive Beta Updates"];
-    [alert addButtonWithTitle:@"Cancel"];
-    if ([alert runModal] != NSAlertFirstButtonReturn) {
-      os_log_info(SHLogUpdates(), "Beta update opt-in cancelled");
-      return;
-    }
-  }
-
-  [[NSUserDefaults standardUserDefaults] setBool:enabling forKey:SHReceiveBetaUpdatesKey];
-  self.receiveBetaUpdatesItem.state = enabling ? NSControlStateValueOn : NSControlStateValueOff;
-  [self.updaterController.updater resetUpdateCycle];
-  if (enabling) {
-    os_log_info(SHLogUpdates(), "Beta update channel enabled");
-  } else {
-    os_log_info(SHLogUpdates(), "Beta update channel disabled");
-  }
+  return [SHUpdateChannel receivesBetaUpdates] ? [NSSet setWithObject:@"beta"] : [NSSet set];
 }
 
 - (void)grantAccess:(id)sender {

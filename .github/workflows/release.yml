@@ -211,7 +211,7 @@ jobs:
           {
             echo "### Beta ${RELEASE_VERSION} published"
             echo
-            echo "Enable **Receive Beta Updates** in SpaceHound and check for updates."
+            echo "Enable **Receive beta updates** in SpaceHound's Settings and check for updates."
             echo "When it is ready for everyone, promote it with:"
             echo
             echo '```sh'

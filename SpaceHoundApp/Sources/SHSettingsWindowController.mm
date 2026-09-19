@@ -3,6 +3,7 @@
 #import "SHLoginItemManager.h"
 #import "SHLogging.h"
 #import "SHSettingsStore.h"
+#import "SHUpdateChannel.h"
 
 #pragma mark - Shortcut vocabulary helpers
 
@@ -560,6 +561,8 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 @property(nonatomic, strong) NSTextField *settingsPathField;
 @property(nonatomic, strong) NSSwitch *launchAtLoginButton;
+@property(nonatomic, strong) NSSwitch *betaUpdatesButton;
+@property(nonatomic, strong) NSView *betaUpdatesRow;
 @property(nonatomic, strong) NSSwitch *workspaceWrapButton;
 @property(nonatomic, strong) NSSwitch *displayWrapButton;
 @property(nonatomic, strong) NSSwitch *trayScrollButton;
@@ -629,6 +632,9 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
   // General section.
   self.launchAtLoginButton = [self makeSwitch];
+  self.betaUpdatesButton = [self makeSwitch];
+  self.betaUpdatesButton.target = self;
+  self.betaUpdatesButton.action = @selector(betaUpdatesChanged:);
   self.workspaceWrapButton = [self makeSwitch];
   self.displayWrapButton = [self makeSwitch];
   self.trayScrollButton = [self makeSwitch];
@@ -640,11 +646,17 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   self.trayScrollInvertedRow = [self toggleRowForSwitch:self.trayScrollInvertedButton
                                                   title:@"Invert tray scroll direction"
                                                subtitle:@"Reverse the scroll direction for switching."];
+  self.betaUpdatesRow =
+      [self toggleRowForSwitch:self.betaUpdatesButton
+                         title:@"Receive beta updates"
+                      subtitle:@"Get beta releases before production. They're signed and notarized "
+                               @"the same way but may contain unfinished changes."];
 
   NSArray<NSView *> *generalRows = @[
     [self toggleRowForSwitch:self.launchAtLoginButton
                        title:@"Launch at login"
                     subtitle:@"Automatically open SpaceHound when you sign in."],
+    self.betaUpdatesRow,
     [self toggleRowForSwitch:self.workspaceWrapButton
                        title:@"Wrap workspace navigation"
                     subtitle:@"Loop back to the first workspace after the last."],
@@ -970,6 +982,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   self.settingsPathField.stringValue = settingsURL.path ?: @"";
   [self applyDocumentToControls:document];
   [self reloadLaunchAtLoginState];
+  [self reloadBetaUpdatesState];
   self.statusLabel.stringValue = @"";
   os_log_info(SHLogSettings(), "Settings reloaded from disk");
 }
@@ -1020,6 +1033,20 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     }
   }
 
+  // Written before the login-item step, which can return early for approval.
+  const BOOL wantsBetaUpdates = (self.betaUpdatesButton.state == NSControlStateValueOn);
+  if (self.updateChannelSelectable && wantsBetaUpdates != [SHUpdateChannel receivesBetaUpdates]) {
+    [SHUpdateChannel setReceivesBetaUpdates:wantsBetaUpdates];
+    if (wantsBetaUpdates) {
+      os_log_info(SHLogUpdates(), "Beta update channel enabled");
+    } else {
+      os_log_info(SHLogUpdates(), "Beta update channel disabled");
+    }
+    if (self.updateChannelChangedHandler != nil) {
+      self.updateChannelChangedHandler();
+    }
+  }
+
   const BOOL launchAtLoginEnabled =
       (self.launchAtLoginButton.state == NSControlStateValueOn);
   NSError *loginItemError = nil;
@@ -1064,6 +1091,40 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   const BOOL isRegistered =
       status == SHLoginItemStatusEnabled || status == SHLoginItemStatusRequiresApproval;
   self.launchAtLoginButton.state = isRegistered ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)reloadBetaUpdatesState {
+  const BOOL selectable = self.updateChannelSelectable;
+  self.betaUpdatesButton.state =
+      [SHUpdateChannel receivesBetaUpdates] ? NSControlStateValueOn : NSControlStateValueOff;
+  self.betaUpdatesButton.enabled = selectable;
+  self.betaUpdatesRow.alphaValue = selectable ? 1.0 : 0.45;
+}
+
+// Confirms the opt-in when the switch is flipped on; the preference itself is
+// only written on Save.
+- (void)betaUpdatesChanged:(id)sender {
+  (void)sender;
+  if (self.betaUpdatesButton.state != NSControlStateValueOn) {
+    return;
+  }
+
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.alertStyle = NSAlertStyleWarning;
+  alert.messageText = @"Receive beta updates?";
+  alert.informativeText =
+      @"Beta updates are signed and notarized like production releases, but may contain "
+       "unfinished changes. You can return to production updates from Settings at any time.";
+  [alert addButtonWithTitle:@"Receive Beta Updates"];
+  [alert addButtonWithTitle:@"Cancel"];
+  __weak SHSettingsWindowController *weakSelf = self;
+  [alert beginSheetModalForWindow:self.window
+                completionHandler:^(NSModalResponse returnCode) {
+                  if (returnCode != NSAlertFirstButtonReturn) {
+                    os_log_info(SHLogUpdates(), "Beta update opt-in cancelled");
+                    weakSelf.betaUpdatesButton.state = NSControlStateValueOff;
+                  }
+                }];
 }
 
 - (void)presentLaunchAtLoginApproval {

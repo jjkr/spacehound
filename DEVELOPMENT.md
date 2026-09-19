@@ -228,7 +228,7 @@ make package-release
 ```
 
 Push a `vX.Y.Z` tag on `main` to release. The workflow publishes the beta
-first. Testers enable **Receive Beta Updates** in the menu bar and validate it.
+first. Testers enable **Receive beta updates** in Settings and validate it.
 When it passes, change the GitHub pre-release to a release; the promote
 workflow verifies the published archive against the feed, moves the item to the
 default channel, re-signs the feed, and deploys it. Leave the pre-release flag

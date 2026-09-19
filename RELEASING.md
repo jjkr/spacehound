@@ -9,7 +9,7 @@ Every release is a Git tag `vX.Y.Z` on `main`. Pushing the tag runs the
 **Release** workflow, which builds, signs, and notarizes the app once, publishes
 it as a GitHub **pre-release**, and adds it to the **beta** channel of the
 Sparkle feed at `https://updates.spacehound.app/appcast.xml`. Only users who
-have enabled **Receive Beta Updates** see it.
+have enabled **Receive beta updates** in Settings see it.
 
 After testing, changing the GitHub pre-release into a release runs the
 **Promote** workflow, which moves that version to the production channel of the
@@ -137,11 +137,11 @@ Do not promote until the beta has been approved. At minimum:
     | grep -E 'sparkle:(version|channel)'
   ```
 
-- In an installed copy of SpaceHound, enable **Receive Beta Updates**, choose
-  **Check for Updates…**, and install the beta.
+- In an installed copy of SpaceHound, enable **Receive beta updates** in
+  Settings, choose **Check for Updates…**, and install the beta.
 - Confirm the update signature is accepted, the release notes render,
   installation completes, the app relaunches, and its core behavior works.
-- With **Receive Beta Updates** disabled in another installation, confirm
+- With **Receive beta updates** disabled in another installation, confirm
   **Check for Updates…** does not offer it.
 - For the first monitored release, use a disposable pre-release build with a
   temporary intentional crash, relaunch it to send the cached event, and confirm
@@ -176,8 +176,9 @@ gh release view v0.4.0 --repo jjkr/spacehound
 gh release view --repo jjkr/spacehound   # the latest (non-pre-release) release
 ```
 
-Also disable **Receive Beta Updates** in an installation, choose **Check for
-Updates…**, and confirm it sees and installs the new production release.
+Also disable **Receive beta updates** in the Settings of an installation, choose
+**Check for Updates…**, and confirm it sees and installs the new production
+release.
 
 ## Corrections and recovery
 

@@ -57,8 +57,6 @@ menu:
 - **Space _X_ of _Y_** — the current status (or a message if access is needed).
 - **Grant Accessibility Access…** — shown only when access hasn't been granted yet.
 - **Settings…** (⌘,) — open the Settings window.
-- **Receive Beta Updates** — opt into or out of beta releases, which ship
-  before production releases and are signed and notarized the same way.
 - **Check for Updates…** — check the signed SpaceHound update feed immediately.
 - **Quit SpaceHound** (⌘Q).
 
@@ -134,6 +132,7 @@ without losing its binding.
 | Setting | What it does | Default |
 | --- | --- | --- |
 | **Launch at login** | Automatically open SpaceHound when you sign in. | Off |
+| **Receive beta updates** | Opt into beta releases, which ship before production releases and are signed and notarized the same way. | Off |
 | **Wrap workspace navigation** | Loop back to the first Space after the last (and vice-versa). | Off |
 | **Wrap display navigation** | Loop across the left and right display edges. | Off |
 | **Enable tray scroll switching** | Scroll over the menu bar icon to change Spaces. | On |
@@ -146,7 +145,8 @@ location.
 
 The **Launch at login** setting is managed by macOS and does not live in
 `settings.json`. If macOS requires approval, SpaceHound offers to open **System
-Settings › General › Login Items**.
+Settings › General › Login Items**. **Receive beta updates** is likewise stored
+outside `settings.json`, in the app's preferences.
 
 ## Where settings are stored
 
