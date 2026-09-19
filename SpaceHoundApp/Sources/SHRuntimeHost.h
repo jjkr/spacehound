@@ -5,8 +5,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface SHRuntimeHost : NSObject
 
 @property(nonatomic, copy, readonly) NSString *statusText;
-@property(nonatomic, copy, readonly) NSString *menuBarTitle;
-@property(nonatomic, copy, nullable) void (^stateChangeHandler)(NSString *menuBarTitle, NSString *statusText);
+@property(nonatomic, copy, nullable) void (^stateChangeHandler)(NSString *statusText);
 
 - (BOOL)applySettings:(NSError *_Nullable *_Nullable)error;
 - (void)start;

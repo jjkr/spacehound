@@ -49,10 +49,9 @@
   }
 
   button.toolTip = @"SpaceHound";
-  button.image = nil;
+  button.image = [self menuBarIcon];
 
   self.runtimeHost = [[SHRuntimeHost alloc] init];
-  button.title = self.runtimeHost.menuBarTitle;
   self.statusMenu = [[NSMenu alloc] initWithTitle:@"SpaceHound"];
 
   NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"SpaceHound" action:nil keyEquivalent:@""];
@@ -97,11 +96,7 @@
   self.statusItem.menu = self.statusMenu;
 
   __weak typeof(self) weakSelf = self;
-  self.runtimeHost.stateChangeHandler = ^(NSString *menuBarTitle, NSString *statusText) {
-    NSStatusBarButton *strongButton = weakSelf.statusItem.button;
-    if (strongButton != nil) {
-      strongButton.title = menuBarTitle;
-    }
+  self.runtimeHost.stateChangeHandler = ^(NSString *statusText) {
     weakSelf.runtimeStatusItem.title = statusText;
   };
 
@@ -238,7 +233,14 @@
   [self presentAccessibilityPrompt];
 }
 
-// Shows an attention badge in the menu bar instead of a blank icon and reveals
+// The template glyph shown in the menu bar while the app is running normally.
+- (NSImage *)menuBarIcon {
+  NSImage *icon = [NSImage imageWithSystemSymbolName:@"dog" accessibilityDescription:@"SpaceHound"];
+  icon.template = YES;
+  return icon;
+}
+
+// Shows an attention badge in the menu bar instead of the app icon and reveals
 // the "Grant Accessibility Access…" menu item.
 - (void)enterNeedsAccessibilityState {
   NSStatusBarButton *button = self.statusItem.button;
@@ -248,19 +250,18 @@
                  accessibilityDescription:@"Accessibility access required"];
     warning.template = YES;
     button.image = warning;
-    button.title = @"";
     button.toolTip = @"SpaceHound — Accessibility access required";
   }
   self.runtimeStatusItem.title = @"Accessibility access required";
   self.grantAccessItem.hidden = NO;
 }
 
-// Clears the attention badge and hides the grant item so the runtime can drive
-// the menu bar title normally.
+// Restores the app icon in place of the attention badge and hides the grant
+// item.
 - (void)enterReadyState {
   NSStatusBarButton *button = self.statusItem.button;
   if (button != nil) {
-    button.image = nil;
+    button.image = [self menuBarIcon];
     button.toolTip = @"SpaceHound";
   }
   self.grantAccessItem.hidden = YES;

@@ -23,7 +23,7 @@ Key source files:
 - `SpaceHoundApp/Sources/AppDelegate.m` — menu bar item, accessibility
   permission workflow, app lifecycle.
 - `SpaceHoundApp/Sources/SHRuntimeHost.mm` — hosts the in-process
-  `spacehound-core` runtime and drives the menu bar title.
+  `spacehound-core` runtime and drives the menu bar status text.
 - `SpaceHoundApp/Sources/SHSettingsWindowController.mm` — the Settings window UI
   (toggles and shortcut recorders).
 - `SpaceHoundApp/Sources/SHSettingsStore.mm` — reads/writes `settings.json` and

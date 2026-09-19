@@ -10,7 +10,7 @@
 SpaceHound lives in your menu bar and makes moving between macOS Spaces (desktops)
 and displays instant. Jump straight to a numbered Space, step left or right, move
 focus between windows, or trigger Mission Control — all from the keyboard, without
-waiting on the built-in animations. The menu bar always shows which Space you're on.
+waiting on the built-in animations. Click the menu bar icon to see which Space you're on.
 
 ## Install
 
@@ -45,7 +45,7 @@ access is granted. If you skip the prompt, the menu bar shows a ⚠️ badge and
   between window thumbnails instead, and opening either with a SpaceHound
   hotkey highlights the focused window right away.
 - **System shortcuts** — toggle Mission Control and App Exposé.
-- **Menu bar indicator** — always shows the number of the Space you're currently
+- **Menu bar indicator** — click the icon to see which Space you're currently
   on.
 - **Scroll to switch** — scroll over the menu bar icon to move between Spaces.
 - **Fully customizable hotkeys** — rebind or disable any shortcut in Settings.
@@ -54,8 +54,7 @@ access is granted. If you skip the prompt, the menu bar shows a ⚠️ badge and
 
 ## The menu bar
 
-The menu bar shows the current Space number (for example, **3**). Click it for the
-menu:
+SpaceHound sits in the menu bar as a small hound icon. Click it for the menu:
 
 - **Space _X_ of _Y_** — the current status (or a message if access is needed).
 - **Grant Accessibility Access…** — shown only when access hasn't been granted yet.
