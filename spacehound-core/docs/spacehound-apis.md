@@ -410,7 +410,11 @@ These exist in `~/work/spacehound`, but I did not find them used from the main s
   - Wrapped for removing a window from its current Spaces before reassigning it.
 
 - `SLSSetActiveMenuBarDisplayIdentifier(...)`
-  - Wrapped for setting the active menu-bar display directly.
+  - Wrapped for setting the active menu-bar display directly. The window server ignores
+    it from third-party processes, so it is not used.
+- `_SLPSSetFrontProcessWithOptions(...)` / `SLPSPostEventRecordTo(...)`
+  - Used by `focus_window` to bring a specific window front without the LaunchServices
+    activation round-trip (the same sequence tiling window managers use).
 
 - AX observer APIs such as:
   - `AXObserverCreate(...)`

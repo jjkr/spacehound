@@ -82,6 +82,11 @@ struct window_focus_plan final {
 
 void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept;
 
+// The active menu-bar display, as the window server reports it, except that
+// for a short while after a display switch it answers the switch target: the
+// reported value lags the focus change by 50-100ms.
+[[nodiscard]] auto active_display_identifier() -> std::optional<std::string>;
+
 [[nodiscard]] auto find_current_display_index(
     std::span<const display_record> displays,
     std::string_view active_display_uuid) noexcept -> std::optional<std::size_t>;

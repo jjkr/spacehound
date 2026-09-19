@@ -1,4 +1,5 @@
 #include "internal/control_internal.hpp"
+#include "internal/logging.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -8,6 +9,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -26,6 +28,7 @@ namespace cf = spacehound::cf;
 namespace cg = spacehound::cg;
 namespace cgs = spacehound::cgs;
 namespace ns = spacehound::ns;
+namespace diagnostics = spacehound::diagnostics;
 
 constexpr auto on_screen_exclude_desktop_option = static_cast<CGWindowListOption>(
     kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements);
@@ -34,6 +37,29 @@ constexpr std::uint64_t window_cycle_timeout_ms = 3000;
 
 std::mutex window_cycle_state_mutex;
 std::optional<window_cycle_state> window_cycle_state_cache;
+
+// The window server reports the new active menu-bar display 50-100ms after a
+// window there is focused. Remember the last switch so that requests arriving
+// in that window plan from where we just went, not where we came from.
+constexpr auto pending_display_switch_ttl = std::chrono::milliseconds{400};
+
+struct pending_display_switch final {
+  std::string from_uuid;
+  std::string to_uuid;
+  std::chrono::steady_clock::time_point at;
+};
+
+std::mutex pending_display_switch_mutex;
+std::optional<pending_display_switch> pending_display_switch_cache;
+
+void record_display_switch(std::string from_uuid, std::string to_uuid) {
+  std::lock_guard lock(pending_display_switch_mutex);
+  pending_display_switch_cache = pending_display_switch{
+      .from_uuid = std::move(from_uuid),
+      .to_uuid = std::move(to_uuid),
+      .at = std::chrono::steady_clock::now(),
+  };
+}
 
 auto runtime_error(std::string message) -> control::error {
   return control::error{
@@ -123,7 +149,7 @@ auto dictionary_rect(
   return CGRectMakeWithDictionaryRepresentation(bounds.get(), &out_rect) != 0;
 }
 
-auto load_active_display_uuid() -> std::optional<std::string> {
+auto load_reported_active_display_uuid() -> std::optional<std::string> {
   const auto active_display =
       cgs::copy_active_menu_bar_display_identifier(cgs::main_connection_id());
   if (!active_display) {
@@ -131,6 +157,10 @@ auto load_active_display_uuid() -> std::optional<std::string> {
   }
 
   return active_display.to_utf8();
+}
+
+auto load_active_display_uuid() -> std::optional<std::string> {
+  return active_display_identifier();
 }
 
 auto load_on_screen_windows(std::vector<window_record> &out_windows) -> bool {
@@ -299,7 +329,24 @@ void apply_window_focus(ax::ui_element_view app, ax::ui_element_view window) {
   (void)window.set_attribute_value(ax::main_attribute, cf::type_view{kCFBooleanTrue});
 }
 
-auto focus_window(const window_record &target_window) -> bool {
+// Returns once the window server reports `display_uuid` as the active
+// menu-bar display, or after `timeout`. Polling NSRunningApplication.isActive
+// instead would always run to the timeout: that property only refreshes when
+// our run loop spins, which it does not while we wait here.
+void wait_for_active_display(std::string_view display_uuid, std::chrono::milliseconds timeout) {
+  using namespace std::chrono_literals;
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (const auto active = load_reported_active_display_uuid();
+        active && *active == display_uuid) {
+      return;
+    }
+
+    std::this_thread::sleep_for(2ms);
+  }
+}
+
+auto focus_window(const window_record &target_window, std::string_view display_uuid) -> bool {
   if (target_window.pid <= 0) {
     return false;
   }
@@ -314,33 +361,22 @@ auto focus_window(const window_record &target_window) -> bool {
     return false;
   }
 
-  apply_window_focus(app.view(), window.view());
-
-  bool did_activate = false;
+  using namespace std::chrono_literals;
   const auto running_application =
       ns::running_application::with_process_identifier(target_window.pid);
-  if (running_application && !running_application.is_active()) {
-    did_activate =
-        running_application.activate(ns::activate_ignoring_other_apps);
+  const bool needs_activation = running_application && !running_application.is_active();
+
+  // Fast path: tell the window server directly which window comes front (the
+  // key-window records make it key in-process), then raise it. No need to
+  // wait for the menu bar; `active_display_identifier` covers the lag.
+  if (needs_activation && cgs::set_front_window(target_window.pid, target_window.window_id)) {
+    (void)window.perform_action(ax::raise_action);
+    return true;
   }
 
-  if (did_activate) {
-    using namespace std::chrono_literals;
-    constexpr auto poll_interval = 10ms;
-    constexpr auto timeout = 100ms;
-
-    std::this_thread::sleep_for(poll_interval);
-    const auto start = std::chrono::steady_clock::now();
-    while (std::chrono::steady_clock::now() - start < timeout) {
-      const auto app_state =
-          ns::running_application::with_process_identifier(target_window.pid);
-      if (app_state && app_state.is_active()) {
-        break;
-      }
-
-      std::this_thread::sleep_for(poll_interval);
-    }
-
+  apply_window_focus(app.view(), window.view());
+  if (needs_activation && running_application.activate(ns::activate_ignoring_other_apps)) {
+    wait_for_active_display(display_uuid, 100ms);
     apply_window_focus(app.view(), window.view());
   }
 
@@ -464,6 +500,25 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
       [](const display_record &lhs, const display_record &rhs) {
         return lhs.bounds.origin.x < rhs.bounds.origin.x;
       });
+}
+
+auto active_display_identifier() -> std::optional<std::string> {
+  auto reported = load_reported_active_display_uuid();
+
+  std::lock_guard lock(pending_display_switch_mutex);
+  if (!pending_display_switch_cache) {
+    return reported;
+  }
+
+  const auto &pending = *pending_display_switch_cache;
+  const bool expired = std::chrono::steady_clock::now() - pending.at > pending_display_switch_ttl;
+  const bool caught_up = !reported || *reported != pending.from_uuid;
+  if (expired || caught_up) {
+    pending_display_switch_cache.reset();
+    return reported;
+  }
+
+  return pending.to_uuid;
 }
 
 auto find_current_display_index(
@@ -719,6 +774,13 @@ auto plan_window_focus_request(
 auto execute_display_request(
     const control::display_request &request,
     cg::event_source_view synthetic_source) -> std::expected<void, control::error> {
+  const auto started_at = std::chrono::steady_clock::now();
+  const auto elapsed_ms = [&] {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now() - started_at)
+        .count();
+  };
+
   std::vector<display_record> displays;
   if (!load_active_displays(displays) || displays.size() <= 1U) {
     return {};
@@ -752,8 +814,14 @@ auto execute_display_request(
 
   const auto target_window_index =
       find_frontmost_window_index_on_display(std::span{windows}, target_display.bounds);
+  const auto prepared_ms = elapsed_ms();
   if (target_window_index) {
-    if (focus_window(windows[*target_window_index])) {
+    if (focus_window(windows[*target_window_index], target_display.uuid)) {
+      record_display_switch(*active_display_uuid, target_display.uuid);
+      os_log_info(diagnostics::navigation_log(),
+                  "Display switch focused a window (prepare=%{public}lldms total=%{public}lldms)",
+                  static_cast<long long>(prepared_ms),
+                  static_cast<long long>(elapsed_ms()));
       return {};
     }
 
@@ -776,6 +844,11 @@ auto execute_display_request(
     return std::unexpected(runtime_error("Failed to post a fallback menu-bar click."));
   }
 
+  record_display_switch(*active_display_uuid, target_display.uuid);
+  os_log_info(diagnostics::navigation_log(),
+              "Display switch clicked an empty display (prepare=%{public}lldms total=%{public}lldms)",
+              static_cast<long long>(prepared_ms),
+              static_cast<long long>(elapsed_ms()));
   return {};
 }
 
@@ -833,7 +906,7 @@ auto execute_window_focus_request(
     return std::unexpected(runtime_error("Failed to match the target window."));
   }
 
-  if (!focus_window(windows[*target_window_index])) {
+  if (!focus_window(windows[*target_window_index], *active_display_uuid)) {
     return std::unexpected(runtime_error("Failed to focus the target window."));
   }
 

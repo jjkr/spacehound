@@ -211,14 +211,13 @@ auto resolve_workspace_display(
     const workspace_request &request,
     cg::event_source_view synthetic_source)
     -> std::expected<workspace_display, workspace_display_error> {
-  const auto connection = cgs::main_connection_id();
-  auto active_display = cgs::copy_active_menu_bar_display_identifier(connection);
-  if (!active_display) {
+  const auto active_display_utf8 = detail::active_display_identifier();
+  if (!active_display_utf8) {
     return std::unexpected(workspace_display_error::active_display_unavailable);
   }
 
-  const auto active_display_utf8 = active_display.to_utf8();
-  if (!active_display_utf8) {
+  auto active_display = cf::string::from_utf8(*active_display_utf8);
+  if (!active_display) {
     return std::unexpected(workspace_display_error::active_display_unavailable);
   }
 
