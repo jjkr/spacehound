@@ -36,6 +36,10 @@ inline const auto selected_children_attribute =
     cf::string_view{kAXSelectedChildrenAttribute};
 inline const auto identifier_attribute = cf::string_view{kAXIdentifierAttribute};
 inline const auto role_attribute = cf::string_view{kAXRoleAttribute};
+inline const auto subrole_attribute = cf::string_view{kAXSubroleAttribute};
+inline const auto description_attribute = cf::string_view{kAXDescriptionAttribute};
+inline const auto selected_attribute = cf::string_view{kAXSelectedAttribute};
+inline const auto focused_attribute = cf::string_view{kAXFocusedAttribute};
 inline const auto menu_bar_role = cf::string_view{kAXMenuBarRole};
 inline const auto raise_action = cf::string_view{kAXRaiseAction};
 
@@ -230,6 +234,31 @@ class ui_element_view final {
   auto set_attribute_value(cf::string_view attribute, cf::type_view value) const noexcept
       -> AXError {
     return AXUIElementSetAttributeValue(get(), attribute.get(), value.get());
+  }
+
+  /// Copies the element's supported attribute names via `AXUIElementCopyAttributeNames`.
+  auto copy_attribute_names(cf::type &names) const noexcept -> AXError {
+    CFArrayRef copied_names = nullptr;
+    const AXError error = AXUIElementCopyAttributeNames(get(), &copied_names);
+    names = error == kAXErrorSuccess ? cf::type::adopt(copied_names) : cf::type{};
+    return error;
+  }
+
+  /// Copies the element's supported action names via `AXUIElementCopyActionNames`.
+  auto copy_action_names(cf::type &names) const noexcept -> AXError {
+    CFArrayRef copied_names = nullptr;
+    const AXError error = AXUIElementCopyActionNames(get(), &copied_names);
+    names = error == kAXErrorSuccess ? cf::type::adopt(copied_names) : cf::type{};
+    return error;
+  }
+
+  /// Reports whether an attribute is settable via `AXUIElementIsAttributeSettable`.
+  auto is_attribute_settable(cf::string_view attribute, bool &settable) const noexcept
+      -> AXError {
+    Boolean value = 0;
+    const AXError error = AXUIElementIsAttributeSettable(get(), attribute.get(), &value);
+    settable = value != 0;
+    return error;
   }
 
   /// Performs an AX action via `AXUIElementPerformAction`.

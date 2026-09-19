@@ -691,6 +691,11 @@ auto initialize_runtime(
                 os_log_debug(diagnostics::navigation_log(),
                              "Fast swipe replay completed (direction=%{public}s)",
                              gesture_direction_name(swipe_direction).data());
+                if (swipe_direction == gesture::direction::up) {
+                  // Mission Control is opening: highlight the focused window
+                  // once it has appeared (polled from the main queue).
+                  control::detail::highlight_frontmost_window_when_overlay_appears();
+                }
               }
 
               return nullptr;

@@ -128,6 +128,7 @@ set(SPACEHOUND_SOURCES
   lib/control.cpp
   lib/daemon.cpp
   lib/display_switch.cpp
+  lib/mission_control.cpp
   lib/ns.mm
   lib/settings.cpp
   lib/version.cpp
@@ -277,6 +278,20 @@ if(SPACEHOUND_BUILD_EXAMPLES)
       CXX_EXTENSIONS OFF
   )
   spacehound_apply_warnings(spacehound_fast_swipe_tap_example)
+
+  add_executable(
+    spacehound_mc_probe_example
+    examples/mc_probe.cpp
+  )
+  target_link_libraries(spacehound_mc_probe_example PRIVATE spacehound::core)
+  target_include_directories(spacehound_mc_probe_example PRIVATE "${PROJECT_SOURCE_DIR}/lib")
+  target_compile_features(spacehound_mc_probe_example PRIVATE cxx_std_23)
+  set_target_properties(
+    spacehound_mc_probe_example
+    PROPERTIES
+      CXX_EXTENSIONS OFF
+  )
+  spacehound_apply_warnings(spacehound_mc_probe_example)
 endif()
 
 if(SPACEHOUND_BUILD_LEGACY_EXAMPLES)

@@ -37,6 +37,7 @@ TEST(cgs_tests, private_space_queries_are_callable) {
       connection, cf::view{empty_array.get()}, cf::view{empty_array.get()}));
   EXPECT_NO_THROW((void)cgs::remove_windows_from_spaces(
       connection, cf::view{empty_array.get()}, cf::view{empty_array.get()}));
+  EXPECT_NO_THROW((void)cgs::set_cursor_in_background(false));
 
   const auto set_active_display = &cgs::set_active_menu_bar_display_identifier;
   ASSERT_NE(set_active_display, nullptr);

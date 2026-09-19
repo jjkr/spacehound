@@ -10,6 +10,7 @@
 #include <expected>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -39,12 +40,6 @@ inline const auto spaces_key = cf::string_view{CFSTR("Spaces")};
 inline const auto current_space_key = cf::string_view{CFSTR("Current Space")};
 inline const auto managed_space_id_key = cf::string_view{CFSTR("ManagedSpaceID")};
 constexpr auto all_windows_option = static_cast<CGWindowListOption>(kCGWindowListOptionAll);
-
-enum class dock_view_state {
-  hidden,
-  mission_control,
-  expose,
-};
 
 auto make_error(error_code code, std::string message) -> error {
   return error{
@@ -323,6 +318,121 @@ auto execute_workspace_request(
   return {};
 }
 
+auto ax_identifier(ax::ui_element_view element) -> std::optional<std::string> {
+  cf::type value;
+  if (element.copy_attribute_value(ax::identifier_attribute, value) != kAXErrorSuccess || !value) {
+    return std::nullopt;
+  }
+
+  const auto identifier = value.cast<CFStringRef>();
+  if (!identifier) {
+    return std::nullopt;
+  }
+
+  return cf::string_view{identifier}.to_utf8();
+}
+
+// Returns the first identifier from `identifiers` found anywhere in the
+// subtree, walking depth-first and at most `max_depth` levels down.
+auto find_first_identifier(
+    ax::ui_element_view element,
+    std::span<const std::string_view> identifiers,
+    std::size_t depth = 0) -> std::optional<std::string_view> {
+  constexpr std::size_t max_depth = 12;
+  if (!element || depth > max_depth) {
+    return std::nullopt;
+  }
+
+  if (const auto element_identifier = ax_identifier(element)) {
+    const auto match = std::ranges::find(identifiers, *element_identifier);
+    if (match != identifiers.end()) {
+      return *match;
+    }
+  }
+
+  cf::type value;
+  if (element.copy_attribute_value(ax::children_attribute, value) != kAXErrorSuccess || !value) {
+    return std::nullopt;
+  }
+
+  const auto children = value.cast<CFArrayRef>();
+  if (!children) {
+    return std::nullopt;
+  }
+
+  const auto count = CFArrayGetCount(children.get());
+  for (CFIndex index = 0; index < count; ++index) {
+    const auto child = cf::array_at<AXUIElementRef>(children, index);
+    if (!child) {
+      continue;
+    }
+
+    if (const auto found = find_first_identifier(ax::ui_element_view{child}, identifiers, depth + 1)) {
+      return found;
+    }
+  }
+
+  return std::nullopt;
+}
+
+auto toggle_direction(system_ui_request request, detail::dock_view_state state) -> gesture::direction {
+  switch (request.element) {
+    case system_ui_element::mission_control:
+      return state == detail::dock_view_state::mission_control ? gesture::direction::down
+                                                       : gesture::direction::up;
+    case system_ui_element::expose:
+      return state == detail::dock_view_state::expose ? gesture::direction::up
+                                              : gesture::direction::down;
+  }
+
+  return gesture::direction::up;
+}
+
+auto execute_system_ui_request(
+    const system_ui_request &request,
+    cg::event_source_view synthetic_source) -> std::expected<void, error> {
+  const auto pid = detail::dock_pid();
+  const auto state = pid ? detail::detect_dock_view_state(*pid) : std::nullopt;
+  if (!state) {
+    return std::unexpected(state_error("Failed to inspect the Dock accessibility hierarchy."));
+  }
+
+  const auto direction = toggle_direction(request, *state);
+  if (!gesture::post_swipe(synthetic_source, direction)) {
+    return std::unexpected(runtime_error("Failed to synthesize the system UI gesture."));
+  }
+
+  // Opening an overlay (up shows Mission Control, down App Exposé, from the
+  // hidden state): highlight the focused window once it has appeared.
+  const bool opens_overlay = *state == detail::dock_view_state::hidden ||
+                             (request.element == system_ui_element::mission_control &&
+                              direction == gesture::direction::up) ||
+                             (request.element == system_ui_element::expose &&
+                              direction == gesture::direction::down);
+  if (opens_overlay) {
+    detail::highlight_frontmost_window_when_overlay_appears();
+  }
+
+  return {};
+}
+
+}  // namespace
+
+namespace detail {
+
+auto dock_view_state_name(dock_view_state state) noexcept -> std::string_view {
+  switch (state) {
+    case dock_view_state::hidden:
+      return "hidden";
+    case dock_view_state::mission_control:
+      return "mission-control";
+    case dock_view_state::expose:
+      return "expose";
+  }
+
+  return "unknown";
+}
+
 auto dock_pid() -> std::optional<pid_t> {
   const auto windows = cg::copy_window_info(all_windows_option, kCGNullWindowID);
   if (!windows) {
@@ -357,112 +467,21 @@ auto dock_pid() -> std::optional<pid_t> {
   return std::nullopt;
 }
 
-auto ax_identifier(ax::ui_element_view element) -> std::optional<std::string> {
-  cf::type value;
-  if (element.copy_attribute_value(ax::identifier_attribute, value) != kAXErrorSuccess || !value) {
-    return std::nullopt;
-  }
-
-  const auto identifier = value.cast<CFStringRef>();
-  if (!identifier) {
-    return std::nullopt;
-  }
-
-  return cf::string_view{identifier}.to_utf8();
-}
-
-auto subtree_contains_identifier(
-    ax::ui_element_view element,
-    std::string_view identifier,
-    std::size_t depth = 0) -> bool {
-  if (!element || depth > 12) {
-    return false;
-  }
-
-  const auto element_identifier = ax_identifier(element);
-  if (element_identifier && *element_identifier == identifier) {
-    return true;
-  }
-
-  cf::type value;
-  if (element.copy_attribute_value(ax::children_attribute, value) != kAXErrorSuccess || !value) {
-    return false;
-  }
-
-  const auto children = value.cast<CFArrayRef>();
-  if (!children) {
-    return false;
-  }
-
-  const auto count = CFArrayGetCount(children.get());
-  for (CFIndex index = 0; index < count; ++index) {
-    const auto child = cf::array_at<AXUIElementRef>(children, index);
-    if (!child) {
-      continue;
-    }
-
-    if (subtree_contains_identifier(ax::ui_element_view{child}, identifier, depth + 1)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-auto detect_dock_view_state() -> std::optional<dock_view_state> {
-  const auto pid = dock_pid();
-  if (!pid) {
-    return std::nullopt;
-  }
-
-  const auto dock = ax::ui_element::create_application(*pid);
+auto detect_dock_view_state(pid_t dock_pid) -> std::optional<dock_view_state> {
+  const auto dock = ax::ui_element::create_application(dock_pid);
   if (!dock) {
     return std::nullopt;
   }
 
-  if (subtree_contains_identifier(dock.view(), "appexpose")) {
-    return dock_view_state::expose;
+  // One walk for all three markers: this runs on every window-cycle hotkey.
+  static constexpr std::string_view markers[] = {"appexpose", "mc", "mc.spaces"};
+  const auto found = find_first_identifier(dock.view(), markers);
+  if (!found) {
+    return dock_view_state::hidden;
   }
 
-  if (subtree_contains_identifier(dock.view(), "mc") ||
-      subtree_contains_identifier(dock.view(), "mc.spaces")) {
-    return dock_view_state::mission_control;
-  }
-
-  return dock_view_state::hidden;
+  return *found == "appexpose" ? dock_view_state::expose : dock_view_state::mission_control;
 }
-
-auto toggle_direction(system_ui_request request, dock_view_state state) -> gesture::direction {
-  switch (request.element) {
-    case system_ui_element::mission_control:
-      return state == dock_view_state::mission_control ? gesture::direction::down
-                                                       : gesture::direction::up;
-    case system_ui_element::expose:
-      return state == dock_view_state::expose ? gesture::direction::up
-                                              : gesture::direction::down;
-  }
-
-  return gesture::direction::up;
-}
-
-auto execute_system_ui_request(
-    const system_ui_request &request,
-    cg::event_source_view synthetic_source) -> std::expected<void, error> {
-  const auto state = detect_dock_view_state();
-  if (!state) {
-    return std::unexpected(state_error("Failed to inspect the Dock accessibility hierarchy."));
-  }
-
-  if (!gesture::post_swipe(synthetic_source, toggle_direction(request, *state))) {
-    return std::unexpected(runtime_error("Failed to synthesize the system UI gesture."));
-  }
-
-  return {};
-}
-
-}  // namespace
-
-namespace detail {
 
 auto is_unified_spaces_display_identifier(
     std::string_view display_identifier) noexcept -> bool {
@@ -609,7 +628,7 @@ auto execute_request(
 
           return execute_display_request(typed_request, synthetic_source);
         } else if constexpr (std::is_same_v<request_type, window_focus_request>) {
-          return execute_window_focus_request(typed_request);
+          return execute_window_focus_request(typed_request, synthetic_source);
         } else {
           return execute_system_ui_request(typed_request, synthetic_source);
         }

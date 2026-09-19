@@ -30,6 +30,11 @@ extern CGError CGSRemoveWindowsFromSpaces(
     CFArrayRef window_ids,
     CFArrayRef space_ids);
 extern void SLSSetActiveMenuBarDisplayIdentifier(CFStringRef display_identifier);
+extern CGError CGSSetConnectionProperty(
+    int connection_id,
+    int owner_connection_id,
+    CFStringRef key,
+    CFTypeRef value);
 }
 
 namespace spacehound::cgs {
@@ -122,6 +127,17 @@ inline constexpr std::uint32_t front_process_user_generated = 0x200;
 /// Sets the active menu-bar display identifier via `SLSSetActiveMenuBarDisplayIdentifier`.
 inline void set_active_menu_bar_display_identifier(cf::string_view display_identifier) noexcept {
   SLSSetActiveMenuBarDisplayIdentifier(display_identifier.get());
+}
+
+/// Lets this (background) process hide and show the cursor: sets the
+/// `SetsCursorInBackground` connection property via `CGSSetConnectionProperty`.
+[[nodiscard]] inline auto set_cursor_in_background(bool enabled) noexcept -> CGError {
+  const auto connection = main_connection_id();
+  return CGSSetConnectionProperty(
+      connection,
+      connection,
+      CFSTR("SetsCursorInBackground"),
+      enabled ? kCFBooleanTrue : kCFBooleanFalse);
 }
 
 }  // namespace spacehound::cgs

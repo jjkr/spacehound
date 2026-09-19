@@ -137,6 +137,10 @@ TEST(ax_tests, trust_helpers_and_constants_are_callable) {
   EXPECT_EQ(ax::children_attribute.get(), kAXChildrenAttribute);
   EXPECT_EQ(ax::selected_children_attribute.get(), kAXSelectedChildrenAttribute);
   EXPECT_EQ(ax::identifier_attribute.get(), kAXIdentifierAttribute);
+  EXPECT_EQ(ax::subrole_attribute.get(), kAXSubroleAttribute);
+  EXPECT_EQ(ax::description_attribute.get(), kAXDescriptionAttribute);
+  EXPECT_EQ(ax::selected_attribute.get(), kAXSelectedAttribute);
+  EXPECT_EQ(ax::focused_attribute.get(), kAXFocusedAttribute);
   EXPECT_EQ(ax::raise_action.get(), kAXRaiseAction);
 
   const auto trusted = ax::is_process_trusted();
@@ -156,6 +160,32 @@ TEST(ax_tests, ui_element_copy_attribute_value_reports_errors_without_leaking_ou
       app.copy_attribute_value(cf::string_view{CFSTR("AXDefinitelyMissing")}, attribute_value);
   EXPECT_NE(error, kAXErrorSuccess);
   EXPECT_FALSE(attribute_value);
+}
+
+TEST(ax_tests, ui_element_name_and_settability_queries_are_callable) {
+  const auto app = ax::ui_element::create_application(getpid());
+  ASSERT_TRUE(app);
+
+  cf::type names = cf::type::retain(cf::type_view{kCFBooleanTrue});
+  if (app.view().copy_attribute_names(names) == kAXErrorSuccess) {
+    EXPECT_TRUE(names && names.is<CFArrayRef>());
+  } else {
+    EXPECT_FALSE(names);
+  }
+
+  names = cf::type::retain(cf::type_view{kCFBooleanTrue});
+  if (app.view().copy_action_names(names) == kAXErrorSuccess) {
+    EXPECT_TRUE(names && names.is<CFArrayRef>());
+  } else {
+    EXPECT_FALSE(names);
+  }
+
+  bool settable = true;
+  const auto error = app.view().is_attribute_settable(
+      cf::string_view{CFSTR("AXDefinitelyMissing")}, settable);
+  if (error != kAXErrorSuccess) {
+    EXPECT_FALSE(settable);
+  }
 }
 
 }  // namespace

@@ -577,6 +577,16 @@ inline void post_tap_event(CGEventTapProxy proxy, event_view value) noexcept {
   return CGWarpMouseCursorPosition(position);
 }
 
+/// Hides the cursor via `CGDisplayHideCursor` (balanced by `show_cursor`).
+[[nodiscard]] inline auto hide_cursor() noexcept -> CGError {
+  return CGDisplayHideCursor(kCGDirectMainDisplay);
+}
+
+/// Shows the cursor via `CGDisplayShowCursor`.
+[[nodiscard]] inline auto show_cursor() noexcept -> CGError {
+  return CGDisplayShowCursor(kCGDirectMainDisplay);
+}
+
 /// Returns how many events of `type` the HID system state has seen, via
 /// `CGEventSourceCounterForEventType`. Events posted to the HID tap count once
 /// the window server has applied them, so a change means "processed".

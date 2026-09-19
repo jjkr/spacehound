@@ -32,6 +32,7 @@ targets:
       - path: spacehound-core/lib/control.cpp
       - path: spacehound-core/lib/daemon.cpp
       - path: spacehound-core/lib/display_switch.cpp
+      - path: spacehound-core/lib/mission_control.cpp
       - path: spacehound-core/lib/ns.mm
         compilerFlags:
           - -fno-objc-arc

@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <ranges>
@@ -161,50 +162,6 @@ auto load_reported_active_display_uuid() -> std::optional<std::string> {
 
 auto load_active_display_uuid() -> std::optional<std::string> {
   return active_display_identifier();
-}
-
-auto load_on_screen_windows(std::vector<window_record> &out_windows) -> bool {
-  const auto window_info = cg::copy_window_info(on_screen_exclude_desktop_option, kCGNullWindowID);
-  if (!window_info) {
-    return false;
-  }
-
-  out_windows.clear();
-  const auto windows_view = cf::view<CFArrayRef>{window_info.get()};
-  const auto count = CFArrayGetCount(windows_view.get());
-  out_windows.reserve(static_cast<std::size_t>(count));
-
-  for (CFIndex index = 0; index < count; ++index) {
-    const auto window_dict_ref = cf::array_at<CFDictionaryRef>(windows_view, index);
-    if (!window_dict_ref) {
-      continue;
-    }
-
-    const auto window_dict = cf::dictionary_view{window_dict_ref};
-
-    std::int64_t window_id = 0;
-    std::int64_t pid = 0;
-    std::int64_t layer = 0;
-    CGRect bounds{};
-    if (!dictionary_number_int64(window_dict, cg::window_number_key, window_id) ||
-        !dictionary_number_int64(window_dict, cg::window_owner_pid_key, pid) ||
-        !dictionary_number_int64(window_dict, cg::window_layer_key, layer) ||
-        !dictionary_rect(window_dict, cg::window_bounds_key, bounds)) {
-      continue;
-    }
-
-    out_windows.push_back(window_record{
-        .window_id = static_cast<CGWindowID>(window_id),
-        .pid = static_cast<pid_t>(pid),
-        .owner_name = dictionary_string_utf8(window_dict, cg::window_owner_name_key),
-        .title = dictionary_string_utf8(window_dict, cg::window_name_key),
-        .layer = layer,
-        .bounds = bounds,
-        .is_onscreen = dictionary_bool(window_dict, cg::window_is_onscreen_key, true),
-    });
-  }
-
-  return true;
 }
 
 auto ax_window_title(ax::ui_element_view window) -> std::string {
@@ -455,17 +412,8 @@ auto find_empty_menu_bar_point(CGRect target_bounds) -> std::optional<CGPoint> {
   return std::nullopt;
 }
 
-// Activates a display by clicking `point` on it. Posted mouse events move the
-// cursor, and hiding it does not survive them, so the hop is kept below a
-// frame instead: warp there synchronously, post the click, wait until the
-// window server reports the mouse-up as applied, and warp straight back.
+// Activates a display by clicking `point` on it, during a cursor hop.
 auto activate_display_with_click(cg::event_source_view synthetic_source, CGPoint point) -> bool {
-  const auto cursor_event = cg::event::create(synthetic_source);
-  if (!cursor_event) {
-    return false;
-  }
-  const auto original = cursor_event.location();
-
   auto down_event =
       cg::event::create_mouse(synthetic_source, kCGEventLeftMouseDown, point, kCGMouseButtonLeft);
   auto up_event =
@@ -476,26 +424,98 @@ auto activate_display_with_click(cg::event_source_view synthetic_source, CGPoint
   down_event.set_flags(0);
   up_event.set_flags(0);
 
-  const auto ups_before = cg::hid_event_count(kCGEventLeftMouseUp);
-  if (cg::warp_mouse_cursor_position(point) != kCGErrorSuccess) {
-    return false;
-  }
-  down_event.post(kCGHIDEventTap);
-  up_event.post(kCGHIDEventTap);
-
-  // Leave only once the up has been applied; otherwise it would drag the
-  // cursor back to `point` after we return it.
-  using namespace std::chrono_literals;
-  const auto deadline = std::chrono::steady_clock::now() + 50ms;
-  while (cg::hid_event_count(kCGEventLeftMouseUp) == ups_before &&
-         std::chrono::steady_clock::now() < deadline) {
-    std::this_thread::sleep_for(1ms);
-  }
-
-  return cg::warp_mouse_cursor_position(original) == kCGErrorSuccess;
+  return cursor_hop(synthetic_source, point, kCGEventLeftMouseUp, false, [&] {
+    down_event.post(kCGHIDEventTap);
+    up_event.post(kCGHIDEventTap);
+  });
 }
 
 }  // namespace
+
+// Posted mouse events move the cursor, so the hop is kept below a frame:
+// warp there synchronously, post, wait until the window server reports the
+// last event as applied, and warp straight back. Hiding the cursor only works
+// from a background process once `SetsCursorInBackground` is set on our
+// window-server connection.
+auto cursor_hop(
+    cg::event_source_view synthetic_source,
+    CGPoint point,
+    CGEventType applied_type,
+    bool hide_cursor,
+    const std::function<void()> &post) -> bool {
+  const auto cursor_event = cg::event::create(synthetic_source);
+  if (!cursor_event) {
+    return false;
+  }
+  const auto original = cursor_event.location();
+
+  const bool hidden = hide_cursor && cgs::set_cursor_in_background(true) == kCGErrorSuccess &&
+                      cg::hide_cursor() == kCGErrorSuccess;
+
+  const auto applied_before = cg::hid_event_count(applied_type);
+  const bool warped = cg::warp_mouse_cursor_position(point) == kCGErrorSuccess;
+  if (warped) {
+    post();
+
+    using namespace std::chrono_literals;
+    const auto deadline = std::chrono::steady_clock::now() + 50ms;
+    while (cg::hid_event_count(applied_type) == applied_before &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(1ms);
+    }
+  }
+
+  const bool restored = cg::warp_mouse_cursor_position(original) == kCGErrorSuccess;
+  if (hidden) {
+    (void)cg::show_cursor();
+  }
+
+  return warped && restored;
+}
+
+auto load_on_screen_windows(std::vector<window_record> &out_windows) -> bool {
+  const auto window_info = cg::copy_window_info(on_screen_exclude_desktop_option, kCGNullWindowID);
+  if (!window_info) {
+    return false;
+  }
+
+  out_windows.clear();
+  const auto windows_view = cf::view<CFArrayRef>{window_info.get()};
+  const auto count = CFArrayGetCount(windows_view.get());
+  out_windows.reserve(static_cast<std::size_t>(count));
+
+  for (CFIndex index = 0; index < count; ++index) {
+    const auto window_dict_ref = cf::array_at<CFDictionaryRef>(windows_view, index);
+    if (!window_dict_ref) {
+      continue;
+    }
+
+    const auto window_dict = cf::dictionary_view{window_dict_ref};
+
+    std::int64_t window_id = 0;
+    std::int64_t pid = 0;
+    std::int64_t layer = 0;
+    CGRect bounds{};
+    if (!dictionary_number_int64(window_dict, cg::window_number_key, window_id) ||
+        !dictionary_number_int64(window_dict, cg::window_owner_pid_key, pid) ||
+        !dictionary_number_int64(window_dict, cg::window_layer_key, layer) ||
+        !dictionary_rect(window_dict, cg::window_bounds_key, bounds)) {
+      continue;
+    }
+
+    out_windows.push_back(window_record{
+        .window_id = static_cast<CGWindowID>(window_id),
+        .pid = static_cast<pid_t>(pid),
+        .owner_name = dictionary_string_utf8(window_dict, cg::window_owner_name_key),
+        .title = dictionary_string_utf8(window_dict, cg::window_name_key),
+        .layer = layer,
+        .bounds = bounds,
+        .is_onscreen = dictionary_bool(window_dict, cg::window_is_onscreen_key, true),
+    });
+  }
+
+  return true;
+}
 
 void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept {
   std::ranges::stable_sort(
@@ -848,7 +868,8 @@ auto execute_display_request(
 }
 
 auto execute_window_focus_request(
-    const control::window_focus_request &request) -> std::expected<void, control::error> {
+    const control::window_focus_request &request,
+    cg::event_source_view synthetic_source) -> std::expected<void, control::error> {
   std::vector<display_record> displays;
   if (!load_active_displays(displays)) {
     return std::unexpected(state_error("Failed to enumerate active displays."));
@@ -862,6 +883,21 @@ auto execute_window_focus_request(
   const auto current_index = find_current_display_index(displays, *active_display_uuid);
   if (!current_index) {
     return std::unexpected(state_error("Failed to match the active display."));
+  }
+
+  // With Mission Control or App Exposé showing, cycle the overlay's hover
+  // highlight between thumbnails instead of focusing windows.
+  const auto detect_started_at = std::chrono::steady_clock::now();
+  const auto dock = dock_pid();
+  const auto dock_state = dock ? detect_dock_view_state(*dock) : std::nullopt;
+  os_log_debug(diagnostics::navigation_log(),
+               "Window cycle inspected the Dock (state=%{public}s detect=%{public}lldms)",
+               dock_state ? dock_view_state_name(*dock_state).data() : "unknown",
+               static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now() - detect_started_at)
+                                          .count()));
+  if (dock_state && *dock_state != dock_view_state::hidden) {
+    return execute_thumbnail_cycle_request(request, synthetic_source, displays[*current_index]);
   }
 
   std::vector<window_record> windows;

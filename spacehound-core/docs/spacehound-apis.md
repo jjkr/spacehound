@@ -103,6 +103,21 @@ Through the Rust `accessibility` crate, the app also uses public AX concepts suc
   - Used to find Dock elements with identifiers like `mc`, `mc.spaces`, and `appexpose`.
   - This is how the app decides whether Mission Control or Expose is open and which Space thumbnail is selected.
 
+#### WindowManager (Mission Control thumbnails)
+
+On current macOS the Dock's `mc` / `appexpose` groups are empty stubs; the
+thumbnail tree belongs to the `WindowManager` process:
+
+- `AXGroup` with identifier `mc.display` or `appexpose.display`, one per display,
+  carrying `AXDisplayID` (a `CGDirectDisplayID`) and a frame equal to the display.
+- Inside it, one `AXButton` per window thumbnail with the window title, `AXFrame`,
+  a private `wid` attribute (the `CGWindowID`) and, in Mission Control, an
+  identifier of the form `<bundle id>.space.<ManagedSpaceID>`. Thumbnails of every
+  space on the display are listed; only those of the current space are visible.
+
+The window-cycle hotkeys use this to hover thumbnails (see `lib/mission_control.cpp`
+and `examples/mc_probe.cpp`).
+
 ### 2. Core Graphics / Quartz Event Services
 
 These APIs handle input interception, synthetic events, display lookup, window enumeration, and cursor movement.
@@ -168,6 +183,10 @@ These APIs handle input interception, synthetic events, display lookup, window e
 - `CGWarpMouseCursorPosition(...)`
   - Moves the cursor instantly.
   - Used to ensure the cursor is on the correct display before posting gesture events, and to anchor focus when a Space has no windows.
+  - Also the basis of the sub-frame "cursor hop" (`cursor_hop` in `display_switch.cpp`): warp to a point, post a HID event there, wait until the window server applied it, warp back. Used for the empty-display click and for hovering Mission Control thumbnails, whose highlight follows the real cursor and stays put after it warps away.
+
+- `CGDisplayHideCursor(...)` / `CGDisplayShowCursor(...)`
+  - Hide the cursor for the duration of a thumbnail hover hop, so it is never seen at the thumbnail. From a background process this only works together with the `SetsCursorInBackground` connection property below.
 
 #### Display APIs
 
@@ -417,6 +436,9 @@ These exist in `~/work/spacehound`, but I did not find them used from the main s
 - `_SLPSSetFrontProcessWithOptions(...)` / `SLPSPostEventRecordTo(...)`
   - Used by `focus_window` to bring a specific window front without the LaunchServices
     activation round-trip (the same sequence tiling window managers use).
+- `CGSSetConnectionProperty(...)`
+  - Used to set `SetsCursorInBackground` on our own connection so that
+    `CGDisplayHideCursor` takes effect while the app is not frontmost.
 
 - AX observer APIs such as:
   - `AXObserverCreate(...)`
