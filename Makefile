@@ -9,7 +9,7 @@ SENTRY_DSN ?=
 APP_NAME := SpaceHound.app
 APP_PATH := $(DERIVED_DATA_PATH)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
 
-.PHONY: help generate build release package-release release-script-tests updates-deploy run open clean distclean app-path
+.PHONY: help generate build release package-release release-script-tests updates-deploy updates-login run open clean distclean app-path
 
 help:
 	@echo "SpaceHound development targets"
@@ -19,7 +19,8 @@ help:
 	@echo "  make release            Build $(SCHEME) with CONFIGURATION=Release (unsigned)"
 	@echo "  make package-release    Archive, sign, notarize, and package Release artifacts"
 	@echo "  make release-script-tests  Test the release scripts"
-	@echo "  make updates-deploy     Deploy updates/public to the Cloudflare Worker (manual recovery)"
+	@echo "  make updates-deploy     Deploy updates/public to the Cloudflare Worker (bootstrap or recovery)"
+	@echo "  make updates-login      Authenticate wrangler with your Cloudflare account"
 	@echo "  make run                Build and launch the app bundle"
 	@echo "  make open               Launch the existing built app bundle"
 	@echo "  make clean              Remove repo-local build artifacts"
@@ -53,10 +54,15 @@ package-release: generate
 release-script-tests:
 	./scripts/tests/release-scripts-test.sh
 
-# Redeploys whatever is in updates/public. Normal releases deploy from CI;
-# use this only to recover, after putting the intended appcast.xml in place.
+# Deploys whatever is in updates/public. Normal releases deploy from CI. Use
+# this once to create the Worker and its custom domain before the first
+# release, or to recover after putting the intended appcast.xml in place.
+# Authenticate first with `make updates-login` or CLOUDFLARE_API_TOKEN.
 updates-deploy:
-	cd updates && mise exec -- npx wrangler deploy
+	cd updates && mise exec -- npx --yes wrangler@4 deploy
+
+updates-login:
+	cd updates && mise exec -- npx --yes wrangler@4 login
 
 run: build
 	open "$(APP_PATH)"

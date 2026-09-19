@@ -25,11 +25,20 @@ forever and the fix ships as the next `X.Y.Z`.
 
 The feed is an assets-only Cloudflare Worker defined in `updates/wrangler.jsonc`
 and bound to `updates.spacehound.app` in the existing `spacehound.app` zone.
-The first `wrangler deploy` creates the custom domain and certificate.
 
-Create an API token with the **Edit Cloudflare Workers** template, scoped to
-the account and the `spacehound.app` zone. Note the account ID from the
-Cloudflare dashboard.
+Create an API token with the **Edit Cloudflare Workers** template plus
+**Zone → DNS → Edit**, scoped to the account and the `spacehound.app` zone.
+Note the account ID from the Cloudflare dashboard.
+
+Then deploy the Worker once with no feed, which creates the custom domain and
+certificate. The release workflow refuses to run while the host does not
+resolve, because it cannot tell a missing domain from an outage:
+
+```sh
+make updates-login
+make updates-deploy
+curl -sI https://updates.spacehound.app/appcast.xml | head -1   # HTTP/2 404
+```
 
 ### GitHub
 
