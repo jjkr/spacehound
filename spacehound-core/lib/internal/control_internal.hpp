@@ -104,14 +104,10 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
 
 [[nodiscard]] auto cursor_anchor_point(CGRect display_bounds) noexcept -> CGPoint;
 
-// Where to click on `target_bounds`' menu bar to activate the display without
-// hitting anything. `last_title_frame` is the frontmost app's rightmost menu
-// title as laid out on `title_display_bounds`; the same offset is empty on
-// every display. Falls back to the top centre when unknown or out of range.
-[[nodiscard]] auto menu_bar_click_point(
-    CGRect target_bounds,
-    std::optional<CGRect> last_title_frame,
-    CGRect title_display_bounds) noexcept -> CGPoint;
+// Points on `target_bounds`' menu bar to try clicking, most likely empty
+// first: the middle, then alternating outward. Menu titles sit on the left and
+// status items on the right, so the gap is normally around the middle.
+[[nodiscard]] auto menu_bar_click_candidates(CGRect target_bounds) -> std::vector<CGPoint>;
 
 [[nodiscard]] auto ensure_cursor_on_display(
     cg::event_source_view synthetic_source,

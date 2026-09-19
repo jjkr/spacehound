@@ -35,9 +35,8 @@ inline const auto children_attribute = cf::string_view{kAXChildrenAttribute};
 inline const auto selected_children_attribute =
     cf::string_view{kAXSelectedChildrenAttribute};
 inline const auto identifier_attribute = cf::string_view{kAXIdentifierAttribute};
-inline const auto focused_application_attribute =
-    cf::string_view{kAXFocusedApplicationAttribute};
-inline const auto menu_bar_attribute = cf::string_view{kAXMenuBarAttribute};
+inline const auto role_attribute = cf::string_view{kAXRoleAttribute};
+inline const auto menu_bar_role = cf::string_view{kAXMenuBarRole};
 inline const auto raise_action = cf::string_view{kAXRaiseAction};
 
 /// Returns whether the current process is trusted for Accessibility access.
@@ -241,6 +240,20 @@ class ui_element_view final {
   /// Resolves the Window Server id for the element via `_AXUIElementGetWindow`.
   auto get_window(CGWindowID &window) const noexcept -> AXError {
     return _AXUIElementGetWindow(get(), &window);
+  }
+
+  /// Returns the owning process id via `AXUIElementGetPid`.
+  auto get_pid(pid_t &pid) const noexcept -> AXError {
+    return AXUIElementGetPid(get(), &pid);
+  }
+
+  /// Copies the element under a screen point via `AXUIElementCopyElementAtPosition`.
+  /// Meaningful on the system-wide element; coordinates use the top-left origin.
+  auto copy_element_at_position(CGPoint point, AXUIElementRef &out_element) const noexcept
+      -> AXError {
+    out_element = nullptr;
+    return AXUIElementCopyElementAtPosition(
+        get(), static_cast<float>(point.x), static_cast<float>(point.y), &out_element);
   }
 
  private:

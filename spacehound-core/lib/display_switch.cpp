@@ -395,57 +395,60 @@ auto find_window_index_by_id(
   return std::nullopt;
 }
 
-// The frontmost app's rightmost menu title, in global (top-left origin)
-// coordinates on whichever display currently shows the active menu bar.
-auto last_menu_title_frame() -> std::optional<CGRect> {
+// What the menu bar at `point` hit-tests as: the owning process, and whether
+// it is bare menu bar (as opposed to a menu title or a status item).
+struct menu_bar_hit final {
+  pid_t pid = 0;
+  bool is_bare_menu_bar = false;
+};
+
+auto hit_test_menu_bar(ax::ui_element_view system_wide, CGPoint point)
+    -> std::optional<menu_bar_hit> {
+  AXUIElementRef raw_element = nullptr;
+  if (system_wide.copy_element_at_position(point, raw_element) != kAXErrorSuccess ||
+      raw_element == nullptr) {
+    return std::nullopt;
+  }
+  const auto element = ax::ui_element::adopt(raw_element);
+
+  menu_bar_hit hit{};
+  if (element.view().get_pid(hit.pid) != kAXErrorSuccess) {
+    return std::nullopt;
+  }
+
+  cf::type role_value;
+  if (element.copy_attribute_value(ax::role_attribute, role_value) != kAXErrorSuccess ||
+      !role_value) {
+    return std::nullopt;
+  }
+  const auto role = role_value.cast<CFStringRef>();
+  hit.is_bare_menu_bar = role && cf::string_view{role}.equals(ax::menu_bar_role);
+  return hit;
+}
+
+// Finds a point on `target_bounds`' menu bar with nothing under it. Each
+// display's bar belongs to the app last active there (not necessarily the
+// frontmost app), so the layout is read from the display itself: the owner is
+// whatever the left margin hit-tests as, and a candidate is accepted when it
+// hit-tests as that owner's bare menu bar. Status-item apps expose their own
+// AXMenuBar around their items, hence the owner check.
+auto find_empty_menu_bar_point(CGRect target_bounds) -> std::optional<CGPoint> {
   const auto system_wide = ax::ui_element::create_system_wide();
   if (!system_wide) {
     return std::nullopt;
   }
 
-  cf::type application_value;
-  if (system_wide.copy_attribute_value(ax::focused_application_attribute, application_value) !=
-          kAXErrorSuccess ||
-      !application_value) {
-    return std::nullopt;
-  }
-  const auto application = application_value.cast<AXUIElementRef>();
-  if (!application) {
+  const auto margin = hit_test_menu_bar(
+      system_wide.view(),
+      CGPoint{.x = target_bounds.origin.x + 8.0, .y = target_bounds.origin.y + 10.0});
+  if (!margin || !margin->is_bare_menu_bar) {
     return std::nullopt;
   }
 
-  cf::type menu_bar_value;
-  if (ax::ui_element_view{application}.copy_attribute_value(ax::menu_bar_attribute, menu_bar_value) !=
-          kAXErrorSuccess ||
-      !menu_bar_value) {
-    return std::nullopt;
-  }
-  const auto menu_bar = menu_bar_value.cast<AXUIElementRef>();
-  if (!menu_bar) {
-    return std::nullopt;
-  }
-
-  cf::type children_value;
-  if (ax::ui_element_view{menu_bar}.copy_attribute_value(ax::children_attribute, children_value) !=
-          kAXErrorSuccess ||
-      !children_value) {
-    return std::nullopt;
-  }
-  const auto children = children_value.cast<CFArrayRef>();
-  if (!children) {
-    return std::nullopt;
-  }
-
-  const auto count = CFArrayGetCount(children.get());
-  for (CFIndex index = count - 1; index >= 0; --index) {
-    const auto item = cf::array_at<AXUIElementRef>(children, index);
-    if (!item) {
-      continue;
-    }
-
-    CGRect frame{};
-    if (ax_window_bounds(ax::ui_element_view{item}, frame) && frame.size.width > 0.0) {
-      return frame;
+  for (const auto candidate : menu_bar_click_candidates(target_bounds)) {
+    const auto hit = hit_test_menu_bar(system_wide.view(), candidate);
+    if (hit && hit->is_bare_menu_bar && hit->pid == margin->pid) {
+      return candidate;
     }
   }
 
@@ -631,25 +634,22 @@ auto plan_display_request(
   return {};
 }
 
-auto menu_bar_click_point(
-    CGRect target_bounds,
-    std::optional<CGRect> last_title_frame,
-    CGRect title_display_bounds) noexcept -> CGPoint {
-  constexpr auto margin = 12.0;
+auto menu_bar_click_candidates(CGRect target_bounds) -> std::vector<CGPoint> {
+  constexpr auto step = 0.05;
+  constexpr auto steps = 5;
   const auto y = target_bounds.origin.y + 10.0;
-
-  if (last_title_frame) {
-    const auto title_max_x = last_title_frame->origin.x + last_title_frame->size.width;
-    const auto x = target_bounds.origin.x + (title_max_x - title_display_bounds.origin.x) + margin;
-    if (x <= target_bounds.origin.x + target_bounds.size.width - margin) {
-      return CGPoint{.x = x, .y = y};
-    }
-  }
-
-  return CGPoint{
-      .x = target_bounds.origin.x + target_bounds.size.width / 2.0,
-      .y = y,
+  const auto at = [&](double fraction) {
+    return CGPoint{.x = target_bounds.origin.x + target_bounds.size.width * fraction, .y = y};
   };
+
+  std::vector<CGPoint> candidates;
+  candidates.reserve(1 + 2 * steps);
+  candidates.push_back(at(0.5));
+  for (int index = 1; index <= steps; ++index) {
+    candidates.push_back(at(0.5 - index * step));
+    candidates.push_back(at(0.5 + index * step));
+  }
+  return candidates;
 }
 
 auto cursor_anchor_point(CGRect display_bounds) noexcept -> CGPoint {
@@ -828,19 +828,14 @@ auto execute_display_request(
     return std::unexpected(runtime_error("Failed to focus a window on the target display."));
   }
 
-  // Nothing to focus: an empty display can only be activated by clicking it.
-  // Aim for the empty menu-bar strip right of the app's last menu title.
-  const auto title_frame = last_menu_title_frame();
-  CGRect title_display_bounds = target_display.bounds;
-  if (title_frame) {
-    if (const auto index = find_display_index_containing_point(displays, title_frame->origin)) {
-      title_display_bounds = displays[*index].bounds;
-    }
+  // Nothing to focus: an empty display can only be activated by clicking it,
+  // on a spot of its menu bar that hit-tests as empty.
+  const auto click_point = find_empty_menu_bar_point(target_display.bounds);
+  if (!click_point) {
+    return std::unexpected(runtime_error("Failed to find an empty spot on the target menu bar."));
   }
 
-  const auto click_point =
-      menu_bar_click_point(target_display.bounds, title_frame, title_display_bounds);
-  if (!activate_display_with_click(synthetic_source, click_point)) {
+  if (!activate_display_with_click(synthetic_source, *click_point)) {
     return std::unexpected(runtime_error("Failed to post a fallback menu-bar click."));
   }
 
