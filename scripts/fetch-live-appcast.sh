@@ -40,9 +40,19 @@ http_status=$(curl --silent --show-error --location \
 function explain_response() {
   grep -iE '^(server|cf-ray|cf-mitigated|cf-cache-status|content-type):' "${headers_path}" >&2 || true
   if [[ -s "${output_path}" ]]; then
-    echo "response body (first 400 bytes):" >&2
-    head -c 400 "${output_path}" | tr -d '\r' >&2
-    echo >&2
+    # Cloudflare block pages carry the error code (1010 browser integrity
+    # check, 1020 WAF/access rule, ...) and a one-line reason.
+    local summary
+    summary=$(tr -d '\r' < "${output_path}" | grep -oE \
+      '<title>[^<]*</title>|cf-error-code">[^<]*|<h1[^>]*>[^<]*|<h2[^>]*>[^<]*|Error code [0-9]+|Ray ID: [0-9a-f]+' \
+      | sed -E 's/<[^>]*>//g; s/cf-error-code">/error code /' | head -6)
+    if [[ -n "${summary}" ]]; then
+      print -r -- "${summary}" >&2
+    else
+      echo "response body (first 400 bytes):" >&2
+      head -c 400 "${output_path}" | tr -d '\r' >&2
+      echo >&2
+    fi
   fi
 }
 
