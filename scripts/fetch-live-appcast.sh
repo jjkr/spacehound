@@ -20,15 +20,30 @@ output_path="$2"
 
 mkdir -p "${output_path:h}"
 rm -f "${output_path}"
+headers_path=$(mktemp "${TMPDIR:-/tmp}/spacehound-feed-headers.XXXXXX")
+trap 'rm -f "${headers_path}"' EXIT
 
 http_status=$(curl --silent --show-error --location \
   --retry 3 --retry-delay 2 \
+  --user-agent 'SpaceHound-release (+https://github.com/jjkr/spacehound)' \
   --header 'Cache-Control: no-cache' \
+  --dump-header "${headers_path}" \
   --output "${output_path}" \
   --write-out '%{http_code}' \
   "${feed_url}") || {
   echo "error: could not reach ${feed_url}" >&2
   exit 1
+}
+
+# Cloudflare names the mitigation that fired (bot protection, WAF, challenge)
+# in these headers and in the error page, which is what you need to fix it.
+function explain_response() {
+  grep -iE '^(server|cf-ray|cf-mitigated|cf-cache-status|content-type):' "${headers_path}" >&2 || true
+  if [[ -s "${output_path}" ]]; then
+    echo "response body (first 400 bytes):" >&2
+    head -c 400 "${output_path}" | tr -d '\r' >&2
+    echo >&2
+  fi
 }
 
 case "${http_status}" in
@@ -48,8 +63,9 @@ case "${http_status}" in
     echo "warning: no appcast is published at ${feed_url}; a new feed will be created" >&2
     ;;
   *)
-    rm -f "${output_path}"
     echo "error: fetching ${feed_url} returned HTTP ${http_status}" >&2
+    explain_response
+    rm -f "${output_path}"
     exit 1
     ;;
 esac
