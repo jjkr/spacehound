@@ -363,8 +363,7 @@ Use this checklist for every public release.
 - [ ] The app relaunches and retains settings.
 - [ ] With beta disabled, the version is not offered.
 - [ ] A human explicitly approved the tag for promotion.
-- [ ] The feed and `releases/latest/download/SpaceHound-arm64.dmg` were
-      verified after promotion.
+- [ ] The feed and the GitHub "latest" release were verified after promotion.
 - [ ] External monitors remain green after promotion.
 
 ### Launch operations

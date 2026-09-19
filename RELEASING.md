@@ -120,8 +120,7 @@ gh run watch --repo jjkr/spacehound --interval 10 --exit-status
 A successful run publishes:
 
 - GitHub pre-release `v0.4.0` with `SpaceHound-0.4.0-arm64.zip`,
-  `SpaceHound-0.4.0-arm64.dmg`, `SpaceHound-arm64.dmg`, and
-  `SpaceHound-0.4.0-SHA256SUMS.txt`.
+  `SpaceHound-0.4.0-arm64.dmg`, and `SpaceHound-0.4.0-SHA256SUMS.txt`.
 - The feed with a new `0.4.0` item on the `beta` channel, deployed to
   `https://updates.spacehound.app/appcast.xml`.
 - The archive's dSYMs to Sentry. Missing credentials, missing symbols, or a
@@ -173,9 +172,8 @@ items, re-signs the feed, and deploys it.
 ```sh
 curl --fail --show-error https://updates.spacehound.app/appcast.xml \
   | grep -E 'sparkle:(version|channel)'
-curl --fail --show-error --head --location \
-  https://github.com/jjkr/spacehound/releases/latest/download/SpaceHound-arm64.dmg
 gh release view v0.4.0 --repo jjkr/spacehound
+gh release view --repo jjkr/spacehound   # the latest (non-pre-release) release
 ```
 
 Also disable **Receive Beta Updates** in an installation, choose **Check for

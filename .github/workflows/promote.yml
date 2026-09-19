@@ -202,5 +202,5 @@ jobs:
             echo "### ${RELEASE_VERSION} promoted to production"
             echo
             echo "- Feed: ${SPARKLE_FEED_URL}"
-            echo "- Download: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/SpaceHound-arm64.dmg"
+            echo "- Download: https://github.com/${GITHUB_REPOSITORY}/releases/latest"
           } >> "${GITHUB_STEP_SUMMARY}"

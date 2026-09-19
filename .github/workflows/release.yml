@@ -166,9 +166,6 @@ jobs:
       - name: Create GitHub pre-release
         run: |
           set -euo pipefail
-          # A stably named DMG lets releases/latest/download/SpaceHound-arm64.dmg
-          # always point at the newest promoted release.
-          cp "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.dmg" build/dist/SpaceHound-arm64.dmg
           gh release create "${RELEASE_TAG}" \
             --verify-tag \
             --prerelease \
@@ -176,7 +173,6 @@ jobs:
             --notes-file "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.md" \
             "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.zip" \
             "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.dmg" \
-            build/dist/SpaceHound-arm64.dmg \
             "build/dist/SpaceHound-${RELEASE_VERSION}-SHA256SUMS.txt"
 
           # Sparkle downloads from this URL; make sure GitHub serves it before

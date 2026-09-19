@@ -14,7 +14,7 @@ waiting on the built-in animations. The menu bar always shows which Space you're
 
 ## Install
 
-1. Download the [**latest SpaceHound DMG**](https://github.com/jjkr/spacehound/releases/latest/download/SpaceHound-arm64.dmg).
+1. Download the DMG from the [**latest release**](https://github.com/jjkr/spacehound/releases/latest).
 2. Open the DMG and drag **SpaceHound** to your Applications folder.
 3. Launch SpaceHound. It appears in the menu bar — there is no Dock icon or main
    window.
