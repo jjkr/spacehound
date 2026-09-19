@@ -149,8 +149,8 @@ Controls whether a display switch (`switch_display_*`) moves the cursor onto the
 destination display. When `true`, the cursor is warped to the top centre of the
 target display before it is activated. When `false`, the cursor is left where it
 is and the target display is activated by focusing its frontmost window. If the
-target display has no windows, it is activated with a synthetic click on an
-empty part of its menu bar; the cursor is warped there and back within a few
+target display has no windows, it is activated with a synthetic click on the
+centre of its menu bar; the cursor is warped there and back within a few
 milliseconds, below a single frame, so it does not visibly move.
 
 ## `hotkeySetting`

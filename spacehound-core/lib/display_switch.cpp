@@ -328,66 +328,6 @@ auto find_window_index_by_id(
   return std::nullopt;
 }
 
-// What the menu bar at `point` hit-tests as: the owning process, and whether
-// it is bare menu bar (as opposed to a menu title or a status item).
-struct menu_bar_hit final {
-  pid_t pid = 0;
-  bool is_bare_menu_bar = false;
-};
-
-auto hit_test_menu_bar(ax::ui_element_view system_wide, CGPoint point)
-    -> std::optional<menu_bar_hit> {
-  AXUIElementRef raw_element = nullptr;
-  if (system_wide.copy_element_at_position(point, raw_element) != kAXErrorSuccess ||
-      raw_element == nullptr) {
-    return std::nullopt;
-  }
-  const auto element = ax::ui_element::adopt(raw_element);
-
-  menu_bar_hit hit{};
-  if (element.view().get_pid(hit.pid) != kAXErrorSuccess) {
-    return std::nullopt;
-  }
-
-  cf::type role_value;
-  if (element.copy_attribute_value(ax::role_attribute, role_value) != kAXErrorSuccess ||
-      !role_value) {
-    return std::nullopt;
-  }
-  const auto role = role_value.cast<CFStringRef>();
-  hit.is_bare_menu_bar = role && cf::string_view{role}.equals(ax::menu_bar_role);
-  return hit;
-}
-
-// Finds a point on `target_bounds`' menu bar with nothing under it. Each
-// display's bar belongs to the app last active there (not necessarily the
-// frontmost app), so the layout is read from the display itself: the owner is
-// whatever the left margin hit-tests as, and a candidate is accepted when it
-// hit-tests as that owner's bare menu bar. Status-item apps expose their own
-// AXMenuBar around their items, hence the owner check.
-auto find_empty_menu_bar_point(CGRect target_bounds) -> std::optional<CGPoint> {
-  const auto system_wide = ax::ui_element::create_system_wide();
-  if (!system_wide) {
-    return std::nullopt;
-  }
-
-  const auto margin = hit_test_menu_bar(
-      system_wide.view(),
-      CGPoint{.x = target_bounds.origin.x + 8.0, .y = target_bounds.origin.y + 10.0});
-  if (!margin || !margin->is_bare_menu_bar) {
-    return std::nullopt;
-  }
-
-  for (const auto candidate : menu_bar_click_candidates(target_bounds)) {
-    const auto hit = hit_test_menu_bar(system_wide.view(), candidate);
-    if (hit && hit->is_bare_menu_bar && hit->pid == margin->pid) {
-      return candidate;
-    }
-  }
-
-  return std::nullopt;
-}
-
 // Activates a display by clicking `point` on it, during a cursor hop.
 auto activate_display_with_click(cg::event_source_view synthetic_source, CGPoint point) -> bool {
   auto down_event =
@@ -668,22 +608,11 @@ auto plan_display_request(
   return {};
 }
 
-auto menu_bar_click_candidates(CGRect target_bounds) -> std::vector<CGPoint> {
-  constexpr auto step = 0.05;
-  constexpr auto steps = 5;
-  const auto y = target_bounds.origin.y + 10.0;
-  const auto at = [&](double fraction) {
-    return CGPoint{.x = target_bounds.origin.x + target_bounds.size.width * fraction, .y = y};
+auto menu_bar_click_point(CGRect target_bounds) noexcept -> CGPoint {
+  return CGPoint{
+      .x = target_bounds.origin.x + target_bounds.size.width / 2.0,
+      .y = target_bounds.origin.y + 10.0,
   };
-
-  std::vector<CGPoint> candidates;
-  candidates.reserve(1 + 2 * steps);
-  candidates.push_back(at(0.5));
-  for (int index = 1; index <= steps; ++index) {
-    candidates.push_back(at(0.5 - index * step));
-    candidates.push_back(at(0.5 + index * step));
-  }
-  return candidates;
 }
 
 auto cursor_anchor_point(CGRect display_bounds) noexcept -> CGPoint {
@@ -908,13 +837,8 @@ auto execute_display_request(
   }
 
   // Nothing to focus: an empty display can only be activated by clicking it,
-  // on a spot of its menu bar that hit-tests as empty.
-  const auto click_point = find_empty_menu_bar_point(target_display.bounds);
-  if (!click_point) {
-    return std::unexpected(runtime_error("Failed to find an empty spot on the target menu bar."));
-  }
-
-  if (!activate_display_with_click(synthetic_source, *click_point)) {
+  // in the middle of its menu bar.
+  if (!activate_display_with_click(synthetic_source, menu_bar_click_point(target_display.bounds))) {
     return std::unexpected(runtime_error("Failed to post a fallback menu-bar click."));
   }
 

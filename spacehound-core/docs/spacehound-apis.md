@@ -150,13 +150,10 @@ These APIs handle input interception, synthetic events, display lookup, window e
 
 - `CGEventCreateMouseEvent(...)`
   - Used to synthesize mouse move/down/up events, including menu-bar clicks on another display.
-  - The empty-display click targets a spot that hit-tests as bare menu bar on the target
-    display (`AXUIElementCopyElementAtPosition` on the system-wide element, role
-    `AXMenuBar`, owned by the same process as the bar's left margin). Each display's bar
-    belongs to the app last active there, so the layout is read from that display rather
-    than from the frontmost app. The cursor is warped there and back around the click;
-    `CGEventSourceCounterForEventType` (HID state, left mouse-up) tells when the click
-    has been applied so the return warp cannot be undone by it.
+  - The empty-display click lands on the top centre of the target display's menu bar,
+    between the menu titles and the status items. The cursor is warped there and back
+    around the click; `CGEventSourceCounterForEventType` (HID state, left mouse-up) tells
+    when the click has been applied so the return warp cannot be undone by it.
 
 - `CGEventPost(...)`
   - Posts a synthetic event into the system event stream.

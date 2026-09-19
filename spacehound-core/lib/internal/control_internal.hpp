@@ -157,10 +157,9 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
 
 [[nodiscard]] auto cursor_anchor_point(CGRect display_bounds) noexcept -> CGPoint;
 
-// Points on `target_bounds`' menu bar to try clicking, most likely empty
-// first: the middle, then alternating outward. Menu titles sit on the left and
-// status items on the right, so the gap is normally around the middle.
-[[nodiscard]] auto menu_bar_click_candidates(CGRect target_bounds) -> std::vector<CGPoint>;
+// Where to click on `target_bounds`' menu bar to activate the display: the
+// middle, between the menu titles on the left and the status items on the right.
+[[nodiscard]] auto menu_bar_click_point(CGRect target_bounds) noexcept -> CGPoint;
 
 // Runs `post` with the cursor warped to `point`, then warps it straight back.
 // `post` must post events to the HID tap; the last of them is of `applied_type`

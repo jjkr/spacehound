@@ -151,20 +151,12 @@ TEST(control_tests, display_index_containing_point_uses_half_open_bounds) {
   EXPECT_EQ(detail::find_display_index_containing_point({}, CGPointMake(0, 0)), std::nullopt);
 }
 
-TEST(control_tests, menu_bar_click_candidates_start_in_the_middle_and_fan_out) {
+TEST(control_tests, menu_bar_click_point_is_the_top_centre) {
   const auto target = make_rect(-3360.0, -351.0, 3360.0, 1890.0);
-  const auto candidates = detail::menu_bar_click_candidates(target);
+  const auto point = detail::menu_bar_click_point(target);
 
-  ASSERT_EQ(candidates.size(), 11U);
-  EXPECT_DOUBLE_EQ(candidates[0].x, -3360.0 + 1680.0);
-  EXPECT_DOUBLE_EQ(candidates[1].x, -3360.0 + 1512.0);
-  EXPECT_DOUBLE_EQ(candidates[2].x, -3360.0 + 1848.0);
-  EXPECT_DOUBLE_EQ(candidates.back().x, -3360.0 + 2520.0);
-  for (const auto &candidate : candidates) {
-    EXPECT_DOUBLE_EQ(candidate.y, -351.0 + 10.0);
-    EXPECT_GE(candidate.x, target.origin.x);
-    EXPECT_LT(candidate.x, target.origin.x + target.size.width);
-  }
+  EXPECT_DOUBLE_EQ(point.x, -3360.0 + 1680.0);
+  EXPECT_DOUBLE_EQ(point.y, -351.0 + 10.0);
 }
 
 TEST(control_tests, display_switch_plans_relative_and_numbered_targets) {
