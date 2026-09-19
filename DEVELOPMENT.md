@@ -197,12 +197,12 @@ it:
   by `sentry-cli` to upload release dSYMs
 - `CLOUDFLARE_API_TOKEN`: token with Workers edit permission for the account
   and the `spacehound.app` zone
+- `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account that owns the zone
 
 And these variables:
 
 - `SPARKLE_PUBLIC_ED_KEY`: the matching base64 public key.
 - `SENTRY_DSN`: the public DSN for the `jjkr/spacehound` Sentry project.
-- `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account that owns the zone.
 
 Promotion is whoever can edit GitHub releases in the repository. For an
 explicit approval step, add a required reviewer to the `release` environment;

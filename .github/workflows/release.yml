@@ -30,7 +30,7 @@ jobs:
       SPARKLE_FEED_URL: https://updates.spacehound.app/appcast.xml
       SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
       SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
       CODE_SIGN_IDENTITY: Developer ID Application
       BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -188,7 +188,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: updates
           command: deploy
 
