@@ -690,7 +690,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     [self.hotkeysStackView.bottomAnchor constraintEqualToAnchor:hotkeysCard.bottomAnchor constant:-6.0],
   ]];
 
-  // Footer.
+  // Settings file section: the on-disk path with Reveal / Reload alongside it.
   self.settingsPathField = [NSTextField labelWithString:@""];
   self.settingsPathField.translatesAutoresizingMaskIntoConstraints = NO;
   self.settingsPathField.font = [NSFont monospacedSystemFontOfSize:10.0 weight:NSFontWeightRegular];
@@ -702,17 +702,31 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [self.settingsPathField setContentHuggingPriority:NSLayoutPriorityDefaultLow
                                      forOrientation:NSLayoutConstraintOrientationHorizontal];
 
-  self.statusLabel = [NSTextField labelWithString:@""];
-  self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
-  self.statusLabel.font = [NSFont systemFontOfSize:11.0];
-  self.statusLabel.textColor = [NSColor secondaryLabelColor];
-
   NSButton *revealButton = [NSButton buttonWithTitle:@"Reveal in Finder"
                                               target:self
                                               action:@selector(revealSettingsFile:)];
   NSButton *reloadButton = [NSButton buttonWithTitle:@"Reload"
                                               target:self
                                               action:@selector(reloadFromDisk:)];
+  SHCardView *settingsFileCard =
+      [self cardWithRows:@[ [self settingsFileRowWithButtons:@[ revealButton, reloadButton ]] ]];
+
+  // Footer: status text on the left, Close / Save on the right.
+  self.statusLabel = [NSTextField labelWithString:@""];
+  self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  self.statusLabel.font = [NSFont systemFontOfSize:11.0];
+  self.statusLabel.textColor = [NSColor secondaryLabelColor];
+  self.statusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+  [self.statusLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow - 1
+                                             forOrientation:NSLayoutConstraintOrientationHorizontal];
+  [self.statusLabel setContentHuggingPriority:NSLayoutPriorityDefaultLow
+                               forOrientation:NSLayoutConstraintOrientationHorizontal];
+
+  NSButton *closeButton = [NSButton buttonWithTitle:@"Close"
+                                             target:self
+                                             action:@selector(closeWindow:)];
+  closeButton.keyEquivalent = @"\e";
+  closeButton.bezelStyle = NSBezelStyleRounded;
   NSButton *saveButton = [NSButton buttonWithTitle:@"Save"
                                             target:self
                                             action:@selector(saveSettings:)];
@@ -724,28 +738,30 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   buttonRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
   buttonRow.alignment = NSLayoutAttributeCenterY;
   buttonRow.spacing = 8.0;
-  [buttonRow addArrangedSubview:self.settingsPathField];
   [buttonRow addArrangedSubview:self.statusLabel];
-  [buttonRow addArrangedSubview:revealButton];
-  [buttonRow addArrangedSubview:reloadButton];
+  [buttonRow addArrangedSubview:closeButton];
   [buttonRow addArrangedSubview:saveButton];
 
-  // Assemble. Hotkeys come first, general settings last; the footer stays
-  // pinned while everything above it scrolls as one document.
+  // Assemble. General first, then hotkeys, then the settings file; the footer
+  // stays pinned while everything above it scrolls as one document.
   NSView *generalHeader = [self groupHeaderTitle:@"General" subtitle:nil];
   NSView *hotkeysHeader = [self groupHeaderTitle:@"Hotkeys"
                                         subtitle:@"Click a shortcut to record a new combination. Turn a row off to disable it."];
+  NSView *settingsFileHeader =
+      [self groupHeaderTitle:@"Settings File"
+                    subtitle:@"Settings are written here when you press Save. Reload discards unsaved "
+                             @"changes and re-reads the file."];
 
-  [rootStack addArrangedSubview:hotkeysHeader];
-  [rootStack addArrangedSubview:hotkeysCard];
-  [rootStack addArrangedSubview:generalHeader];
-  [rootStack addArrangedSubview:generalCard];
-
-  for (NSView *view in @[ hotkeysHeader, hotkeysCard, generalHeader, generalCard ]) {
+  NSArray<NSView *> *sections = @[
+    generalHeader, generalCard, hotkeysHeader, hotkeysCard, settingsFileHeader, settingsFileCard
+  ];
+  for (NSView *view in sections) {
+    [rootStack addArrangedSubview:view];
     [view.widthAnchor constraintEqualToAnchor:rootStack.widthAnchor].active = YES;
   }
-  [rootStack setCustomSpacing:8.0 afterView:hotkeysHeader];
   [rootStack setCustomSpacing:8.0 afterView:generalHeader];
+  [rootStack setCustomSpacing:8.0 afterView:hotkeysHeader];
+  [rootStack setCustomSpacing:8.0 afterView:settingsFileHeader];
 
   // A plain container is the document view so it fills the full viewport width
   // (the clip view pins its document to the origin, so insetting the document
@@ -874,6 +890,38 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   }
 
   [NSLayoutConstraint activateConstraints:constraints];
+  return row;
+}
+
+// Path label on the left, action buttons on the right, laid out like a toggle
+// row so the card matches the General section.
+- (NSView *)settingsFileRowWithButtons:(NSArray<NSButton *> *)buttons {
+  NSView *row = [[NSView alloc] initWithFrame:NSZeroRect];
+  row.translatesAutoresizingMaskIntoConstraints = NO;
+
+  NSStackView *buttonStack = [[NSStackView alloc] initWithFrame:NSZeroRect];
+  buttonStack.translatesAutoresizingMaskIntoConstraints = NO;
+  buttonStack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+  buttonStack.alignment = NSLayoutAttributeCenterY;
+  buttonStack.spacing = 8.0;
+  for (NSButton *button in buttons) {
+    [buttonStack addArrangedSubview:button];
+  }
+
+  [row addSubview:self.settingsPathField];
+  [row addSubview:buttonStack];
+
+  [NSLayoutConstraint activateConstraints:@[
+    [self.settingsPathField.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:kRowInsetX],
+    [self.settingsPathField.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+
+    [buttonStack.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-kRowInsetX],
+    [buttonStack.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+    [buttonStack.topAnchor constraintEqualToAnchor:row.topAnchor constant:kRowInsetY],
+    [buttonStack.bottomAnchor constraintEqualToAnchor:row.bottomAnchor constant:-kRowInsetY],
+    [buttonStack.leadingAnchor constraintEqualToAnchor:self.settingsPathField.trailingAnchor constant:12.0],
+  ]];
+
   return row;
 }
 
@@ -1142,6 +1190,11 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                     [SHLoginItemManager openSystemSettings];
                   }
                 }];
+}
+
+- (void)closeWindow:(id)sender {
+  // Routes through windowWillClose: so hotkey suspension is always released.
+  [self.window performClose:sender];
 }
 
 - (void)revealSettingsFile:(id)sender {
