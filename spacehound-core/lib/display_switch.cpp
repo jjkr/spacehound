@@ -439,35 +439,63 @@ auto focus_window(const window_record &target_window, std::string_view display_u
     return false;
   }
 
-  const auto app = ax::ui_element::create_application(target_window.pid);
-  if (!app) {
-    return false;
-  }
-
-  const auto window = find_target_ax_window(app.view(), target_window);
-  if (!window) {
-    return false;
-  }
-
   using namespace std::chrono_literals;
+  const auto started_at = std::chrono::steady_clock::now();
+  const auto elapsed_ms = [&] {
+    return static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now() - started_at)
+                                      .count());
+  };
+
   const auto running_application =
       ns::running_application::with_process_identifier(target_window.pid);
   const bool needs_activation = running_application && !running_application.is_active();
 
-  // Fast path: tell the window server directly which window comes front (the
-  // key-window records make it key in-process), then raise it. No need to
-  // wait for the menu bar; `active_display_identifier` covers the lag.
-  if (needs_activation && cgs::set_front_window(target_window.pid, target_window.window_id)) {
+  // Fast path first, before any accessibility round-trip: the window server
+  // only needs the pid and window id, both already in the CG record, and the
+  // switch is visible as soon as it accepts them. Slow AX servers otherwise
+  // hold up the visible switch by however long they take to list windows.
+  // No need to wait for the menu bar; `active_display_identifier` covers
+  // the lag.
+  const bool fronted =
+      needs_activation && cgs::set_front_window(target_window.pid, target_window.window_id);
+  const auto fronted_ms = elapsed_ms();
+
+  const auto app = ax::ui_element::create_application(target_window.pid);
+  const auto window = app ? find_target_ax_window(app.view(), target_window) : ax::ui_element{};
+  if (!window) {
+    os_log_info(diagnostics::navigation_log(),
+                "Focus window found no AX window (pid=%{public}d path=%{public}s front=%{public}lldms total=%{public}lldms)",
+                static_cast<int>(target_window.pid),
+                fronted ? "window-server" : "none",
+                fronted_ms,
+                elapsed_ms());
+    return fronted;
+  }
+
+  if (fronted) {
     (void)window.perform_action(ax::raise_action);
+    os_log_info(diagnostics::navigation_log(),
+                "Focus window used the window server (pid=%{public}d front=%{public}lldms total=%{public}lldms)",
+                static_cast<int>(target_window.pid),
+                fronted_ms,
+                elapsed_ms());
     return true;
   }
 
   apply_window_focus(app.view(), window.view());
+  const char *path = "ax-only";
   if (needs_activation && running_application.activate(ns::activate_ignoring_other_apps)) {
     wait_for_active_display(display_uuid, 100ms);
     apply_window_focus(app.view(), window.view());
+    path = "launch-services";
   }
 
+  os_log_info(diagnostics::navigation_log(),
+              "Focus window used %{public}s (pid=%{public}d total=%{public}lldms)",
+              path,
+              static_cast<int>(target_window.pid),
+              elapsed_ms());
   return true;
 }
 
