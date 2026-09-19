@@ -48,10 +48,6 @@ auto make_error(error_code code, std::string message) -> error {
   };
 }
 
-auto permission_error(std::string message) -> error {
-  return make_error(error_code::permission_denied, std::move(message));
-}
-
 auto invalid_request_error(std::string message) -> error {
   return make_error(error_code::invalid_request, std::move(message));
 }
@@ -319,15 +315,6 @@ auto resolve_workspace_display(
   }
 
   return workspace_display{.identifier = std::move(identifier)};
-}
-
-auto ensure_accessibility_permission() -> std::expected<void, error> {
-  if (ax::is_process_trusted()) {
-    return {};
-  }
-
-  return std::unexpected(permission_error(
-      "Accessibility permission is required. Enable it in System Settings > Privacy & Security > Accessibility and try again."));
 }
 
 auto post_swipe_sequence(
@@ -707,15 +694,6 @@ auto execute_request(
   os_log_debug(diagnostics::navigation_log(),
                "Action execution started (type=%{public}s)",
                name.data());
-
-  const auto permission = ensure_accessibility_permission();
-  if (!permission) {
-    os_log_error(diagnostics::navigation_log(),
-                 "Action execution failed (type=%{public}s code=%{public}s)",
-                 name.data(),
-                 error_code_name(permission.error().code));
-    return std::unexpected(permission.error());
-  }
 
   auto result = std::visit(
       [&](const auto &typed_request) -> std::expected<void, control::error> {

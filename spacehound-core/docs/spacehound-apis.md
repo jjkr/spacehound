@@ -49,7 +49,8 @@ These APIs are used for permission checks, window focusing, and reading Mission 
 
 - `AXIsProcessTrusted()`
   - Checks whether the app already has Accessibility permission.
-  - Used for safe polling from the setup UI and startup checks.
+  - Used for safe polling from the setup UI and when the runtime starts; hotkey actions do not
+    re-check it.
 
 - `AXIsProcessTrustedWithOptions(...)`
   - Same basic check, but can request the system permission prompt when passed `AXTrustedCheckOptionPrompt`.
