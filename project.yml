@@ -7,8 +7,8 @@ options:
 
 settings:
   base:
-    CURRENT_PROJECT_VERSION: 0.4.0
-    MARKETING_VERSION: 0.4.0
+    CURRENT_PROJECT_VERSION: 0.4.1
+    MARKETING_VERSION: 0.4.1
     CLANG_ENABLE_OBJC_ARC: YES
     SPARKLE_FEED_URL: https://updates.spacehound.app/appcast.xml
     SPARKLE_PUBLIC_ED_KEY: ""
@@ -76,7 +76,7 @@ targets:
 
           generated_dir="${DERIVED_FILE_DIR}/spacehound-generated/include/spacehound"
           generated_header_path="${generated_dir}/version.hpp"
-          marketing_version="${MARKETING_VERSION:-0.4.0}"
+          marketing_version="${MARKETING_VERSION:-0.4.1}"
 
           major=0
           minor=0
