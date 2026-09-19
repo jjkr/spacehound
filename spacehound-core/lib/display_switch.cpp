@@ -634,7 +634,8 @@ auto plan_window_focus_request(
 
 auto execute_display_request(
     const control::display_request &request,
-    cg::event_source_view synthetic_source) -> std::expected<void, control::error> {
+    cg::event_source_view synthetic_source,
+    const control::delegate &delegate) -> std::expected<void, control::error> {
   std::vector<display_record> displays;
   if (!load_active_displays(displays) || displays.size() <= 1U) {
     return {};
@@ -674,6 +675,19 @@ auto execute_display_request(
     }
 
     return std::unexpected(runtime_error("Failed to focus a window on the target display."));
+  }
+
+  // Nothing to focus. Prefer the host's activation (an app can own a key
+  // window on the target display without touching the cursor) and only
+  // synthesize a click when no host handles it.
+  if (delegate.activate_empty_display != nullptr) {
+    const control::display_target target{
+        .uuid = target_display.uuid,
+        .bounds = target_display.bounds,
+    };
+    if (delegate.activate_empty_display(target, delegate.context)) {
+      return {};
+    }
   }
 
   // An empty display can only be activated by clicking it, which moves the

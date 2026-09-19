@@ -1,5 +1,7 @@
 #pragma once
 
+#include <CoreGraphics/CoreGraphics.h>
+
 #include <cstddef>
 #include <expected>
 #include <string>
@@ -75,6 +77,26 @@ struct window_focus_request final {
 
 using request =
     std::variant<workspace_request, display_request, system_ui_request, window_focus_request>;
+
+/// A display a request wants to make active.
+struct display_target final {
+  std::string uuid;
+  CGRect bounds{};
+};
+
+/// Asked to make `target` the active display when it has no windows to focus.
+/// Returns true when the host handled it; false falls back to the built-in
+/// synthetic menu-bar click.
+using activate_empty_display_callback = bool (*)(const display_target &target, void *context);
+
+/// Host hooks that let an embedding application take over steps the core can
+/// only approximate with synthetic input.
+struct delegate final {
+  activate_empty_display_callback activate_empty_display = nullptr;
+  void *context = nullptr;
+
+  [[nodiscard]] auto operator==(const delegate &) const -> bool = default;
+};
 
 [[nodiscard]] auto execute(const request &request)
     -> std::expected<void, error>;

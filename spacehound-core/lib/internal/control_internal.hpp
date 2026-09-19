@@ -120,13 +120,15 @@ void sort_displays_left_to_right(std::vector<display_record> &displays) noexcept
 
 [[nodiscard]] auto execute_display_request(
     const control::display_request &request,
-    cg::event_source_view synthetic_source) -> std::expected<void, control::error>;
+    cg::event_source_view synthetic_source,
+    const control::delegate &delegate) -> std::expected<void, control::error>;
 
 [[nodiscard]] auto execute_window_focus_request(
     const control::window_focus_request &request) -> std::expected<void, control::error>;
 
 [[nodiscard]] auto execute_request(
     const control::request &request,
-    cg::event_source_view synthetic_source) -> std::expected<void, control::error>;
+    cg::event_source_view synthetic_source,
+    const control::delegate &delegate = {}) -> std::expected<void, control::error>;
 
 }  // namespace spacehound::control::detail
