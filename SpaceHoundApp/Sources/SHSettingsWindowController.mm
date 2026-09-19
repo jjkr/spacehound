@@ -594,6 +594,9 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                                                      defer:NO];
   window.title = @"SpaceHound Settings";
   window.releasedWhenClosed = NO;
+  // The window is reused across open/close cycles; without this it would stay
+  // pinned to the Space it was first shown on and drag the user back there.
+  window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace;
   window.minSize = NSMakeSize(560.0, 560.0);
   window.frameAutosaveName = @"SpaceHoundSettingsWindow";
 
@@ -617,9 +620,11 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 - (void)showWindowAndActivate {
   os_log_info(SHLogSettings(), "Opening settings window");
   [self reloadFromDisk:nil];
+  // Regular policy gives the window a real menu bar and Dock presence while it
+  // is open; windowWillClose: drops back to a menu-bar-only agent.
+  [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
   [self showWindow:nil];
   [NSApp activateIgnoringOtherApps:YES];
-  [self.window makeKeyAndOrderFront:nil];
 }
 
 - (void)buildInterface {
@@ -1322,6 +1327,14 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   // responder on close isn't guaranteed to fire the recorder's own reset.
   self.recorderListening = NO;
   [self updateInputSuspension];
+
+  // Return to a menu-bar-only agent. Hiding hands activation to the next app
+  // on the current Space so the menu bar is never left blank with SpaceHound
+  // as an invisible frontmost app.
+  [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+  if (NSApp.isActive) {
+    [NSApp hide:nil];
+  }
 }
 
 - (void)presentSettingsError:(NSError *)error {

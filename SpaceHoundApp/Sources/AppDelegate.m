@@ -26,6 +26,7 @@
 
   os_log_info(SHLogLifecycle(), "Application finished launching");
   [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+  [self installMainMenu];
 
   // Start the updater independently of Accessibility permission and the
   // SpaceHound runtime. This also lets users update a misconfigured install.
@@ -120,6 +121,63 @@
 
   [self startRuntimeOrRequestAccess];
   os_log_info(SHLogLifecycle(), "Application launch setup completed");
+}
+
+// The app launches as a menu-bar agent, so this menu is invisible until the
+// settings window switches the activation policy to Regular. It gives that
+// window a proper menu bar: the app name, standard Edit shortcuts for text
+// fields, and Cmd-W / Cmd-Q.
+- (void)installMainMenu {
+  NSMenu *mainMenu = [[NSMenu alloc] initWithTitle:@"MainMenu"];
+
+  // The app menu's title is replaced by the process name at runtime.
+  NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"SpaceHound"];
+  [appMenu addItemWithTitle:@"About SpaceHound" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+  [appMenu addItem:[NSMenuItem separatorItem]];
+  NSMenuItem *settingsItem =
+      [[NSMenuItem alloc] initWithTitle:@"Settings…" action:@selector(openSettings:) keyEquivalent:@","];
+  settingsItem.target = self;
+  [appMenu addItem:settingsItem];
+  [appMenu addItem:[NSMenuItem separatorItem]];
+  [appMenu addItemWithTitle:@"Hide SpaceHound" action:@selector(hide:) keyEquivalent:@"h"];
+  NSMenuItem *hideOthersItem =
+      [appMenu addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"];
+  hideOthersItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+  [appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+  [appMenu addItem:[NSMenuItem separatorItem]];
+  NSMenuItem *quitItem =
+      [[NSMenuItem alloc] initWithTitle:@"Quit SpaceHound" action:@selector(quit:) keyEquivalent:@"q"];
+  quitItem.target = self;
+  [appMenu addItem:quitItem];
+  NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:@"SpaceHound" action:nil keyEquivalent:@""];
+  appMenuItem.submenu = appMenu;
+  [mainMenu addItem:appMenuItem];
+
+  // Nil targets route through the first responder so text fields get them.
+  NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+  [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+  NSMenuItem *redoItem = [editMenu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"z"];
+  redoItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+  [editMenu addItem:[NSMenuItem separatorItem]];
+  [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+  [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+  [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+  [editMenu addItemWithTitle:@"Delete" action:@selector(delete:) keyEquivalent:@""];
+  [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+  NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:nil keyEquivalent:@""];
+  editMenuItem.submenu = editMenu;
+  [mainMenu addItem:editMenuItem];
+
+  NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+  [windowMenu addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
+  [windowMenu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
+  [windowMenu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
+  NSMenuItem *windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:nil keyEquivalent:@""];
+  windowMenuItem.submenu = windowMenu;
+  [mainMenu addItem:windowMenuItem];
+
+  NSApp.mainMenu = mainMenu;
+  NSApp.windowsMenu = windowMenu;
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
