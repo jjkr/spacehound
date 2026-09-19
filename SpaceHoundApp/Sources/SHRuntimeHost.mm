@@ -2,8 +2,6 @@
 #import "SHLogging.h"
 #import "SHSettingsStore.h"
 
-#import <Cocoa/Cocoa.h>
-
 #include <spacehound/daemon.hpp>
 
 namespace {
@@ -12,82 +10,12 @@ auto settings_file_path(NSURL *url) -> std::filesystem::path {
   return std::filesystem::path([url fileSystemRepresentation]);
 }
 
-auto screen_for_display_uuid(NSString *uuid) -> NSScreen * {
-  for (NSScreen *screen in NSScreen.screens) {
-    NSNumber *screenNumber = screen.deviceDescription[@"NSScreenNumber"];
-    if (screenNumber == nil) {
-      continue;
-    }
-
-    CFUUIDRef displayUUID = CGDisplayCreateUUIDFromDisplayID(screenNumber.unsignedIntValue);
-    if (displayUUID == NULL) {
-      continue;
-    }
-
-    CFStringRef displayUUIDString = CFUUIDCreateString(kCFAllocatorDefault, displayUUID);
-    CFRelease(displayUUID);
-    if (displayUUIDString == NULL) {
-      continue;
-    }
-
-    const BOOL matches = [(__bridge NSString *)displayUUIDString isEqualToString:uuid];
-    CFRelease(displayUUIDString);
-    if (matches) {
-      return screen;
-    }
-  }
-
-  return nil;
-}
-
 }  // namespace
-
-// A transparent, mouse-ignoring 1x1 window that may become key. macOS makes
-// the display holding the key window the active one, so parking this window on
-// an otherwise empty display activates it without synthesizing a click or
-// moving the cursor.
-//
-// This only works while the app has the Regular activation policy: accessory
-// (LSUIElement) apps do not own the menu bar, so their key window never moves
-// it. The host therefore switches to Regular for as long as the anchor is up
-// and reverts to Accessory when it is dismissed.
-@interface SHDisplayAnchorWindow : NSWindow
-@end
-
-@implementation SHDisplayAnchorWindow
-
-- (BOOL)canBecomeKeyWindow {
-  return YES;
-}
-
-- (BOOL)canBecomeMainWindow {
-  return NO;
-}
-
-// While the anchor is key the menu bar reads "SpaceHound", so a reflexive
-// Cmd-Q aimed at the "empty" desktop would quit the hotkey daemon. Swallow
-// it; the menu item and the tray menu still quit.
-- (BOOL)performKeyEquivalent:(NSEvent *)event {
-  const NSEventModifierFlags modifiers =
-      event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
-  if (modifiers == NSEventModifierFlagCommand &&
-      [event.charactersIgnoringModifiers isEqualToString:@"q"]) {
-    return YES;
-  }
-
-  return [super performKeyEquivalent:event];
-}
-
-@end
 
 @interface SHRuntimeHost ()
 
 @property(nonatomic, copy) NSString *statusText;
 @property(nonatomic, copy) NSString *menuBarTitle;
-@property(nonatomic, strong, nullable) SHDisplayAnchorWindow *displayAnchorWindow;
-
-- (BOOL)activateEmptyDisplayWithUUID:(NSString *)uuid;
-- (void)dismissDisplayAnchor;
 
 - (void)handleWorkspaceStateChangeWithCurrentSpace:(NSUInteger)currentSpace
                                          numSpaces:(NSUInteger)numSpaces;
@@ -116,28 +44,6 @@ static void SHRuntimeHostActiveSpaceChanged(
   });
 }
 
-static bool SHRuntimeHostActivateEmptyDisplay(
-    const spacehound::control::display_target &target,
-    void *context) {
-  SHRuntimeHost *host = (__bridge SHRuntimeHost *)context;
-  NSString *uuid = [NSString stringWithUTF8String:target.uuid.c_str()];
-  if (uuid == nil) {
-    return false;
-  }
-
-  // The runtime executes actions on the run loop it was started from (the
-  // main thread), but guard anyway: AppKit work must happen on main.
-  if (NSThread.isMainThread) {
-    return [host activateEmptyDisplayWithUUID:uuid];
-  }
-
-  __block BOOL handled = NO;
-  dispatch_sync(dispatch_get_main_queue(), ^{
-    handled = [host activateEmptyDisplayWithUUID:uuid];
-  });
-  return handled;
-}
-
 - (instancetype)init {
   self = [super init];
   if (self == nil) {
@@ -146,22 +52,10 @@ static bool SHRuntimeHostActivateEmptyDisplay(
 
   _statusText = @"Stopped";
   _menuBarTitle = @"";
-
-  // The anchor only needs to exist until something else takes focus.
-  NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
-  [center addObserver:self
-             selector:@selector(applicationDidResignActive:)
-                 name:NSApplicationDidResignActiveNotification
-               object:nil];
-  [center addObserver:self
-             selector:@selector(windowDidBecomeKey:)
-                 name:NSWindowDidBecomeKeyNotification
-               object:nil];
   return self;
 }
 
 - (void)dealloc {
-  [NSNotificationCenter.defaultCenter removeObserver:self];
   [self stop];
 }
 
@@ -298,8 +192,6 @@ static bool SHRuntimeHostActivateEmptyDisplay(
   options.settings_path_override = settings_file_path(settingsURL);
   options.observer.active_space_changed = SHRuntimeHostActiveSpaceChanged;
   options.observer.context = (__bridge void *)self;
-  options.delegate.activate_empty_display = SHRuntimeHostActivateEmptyDisplay;
-  options.delegate.context = (__bridge void *)self;
 
   const auto started = _runtime.start(options);
   if (!started.has_value()) {
@@ -325,93 +217,6 @@ static bool SHRuntimeHostActivateEmptyDisplay(
 
   os_log_debug(SHLogNavigation(), "Current workspace state is unavailable");
   [self updateMenuBarTitle:@"" statusText:@"Running"];
-}
-
-- (BOOL)activateEmptyDisplayWithUUID:(NSString *)uuid {
-  NSScreen *screen = screen_for_display_uuid(uuid);
-  if (screen == nil) {
-    os_log_error(SHLogNavigation(), "Empty display activation failed (code=screen-not-found)");
-    return NO;
-  }
-
-  if (self.displayAnchorWindow == nil) {
-    SHDisplayAnchorWindow *window =
-        [[SHDisplayAnchorWindow alloc] initWithContentRect:NSMakeRect(0.0, 0.0, 1.0, 1.0)
-                                                 styleMask:NSWindowStyleMaskBorderless
-                                                   backing:NSBackingStoreBuffered
-                                                     defer:NO];
-    window.releasedWhenClosed = NO;
-    window.alphaValue = 0.0;
-    window.opaque = NO;
-    window.hasShadow = NO;
-    window.backgroundColor = NSColor.clearColor;
-    window.ignoresMouseEvents = YES;
-    window.excludedFromWindowsMenu = YES;
-    window.animationBehavior = NSWindowAnimationBehaviorNone;
-    window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace |
-                                NSWindowCollectionBehaviorStationary |
-                                NSWindowCollectionBehaviorIgnoresCycle |
-                                NSWindowCollectionBehaviorFullScreenAuxiliary;
-    self.displayAnchorWindow = window;
-  }
-
-  const NSRect frame = screen.frame;
-  [self.displayAnchorWindow setFrameOrigin:NSMakePoint(NSMidX(frame), NSMidY(frame))];
-  // See SHDisplayAnchorWindow: only a Regular app's key window drives the
-  // active menu-bar display. Reverted in -dismissDisplayAnchor.
-  [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-  [self.displayAnchorWindow makeKeyAndOrderFront:nil];
-  [NSApp activateIgnoringOtherApps:YES];
-  os_log_debug(SHLogNavigation(), "Empty display activation requested via anchor window");
-
-  // Activation completes asynchronously; report (but don't retry) if macOS
-  // declined so the failure is visible in the logs.
-  __weak SHRuntimeHost *weakSelf = self;
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(250 * NSEC_PER_MSEC)),
-                 dispatch_get_main_queue(), ^{
-    SHRuntimeHost *strongSelf = weakSelf;
-    if (strongSelf == nil || strongSelf.displayAnchorWindow == nil) {
-      return;
-    }
-    if (!strongSelf.displayAnchorWindow.isKeyWindow) {
-      os_log_error(SHLogNavigation(),
-                   "Empty display activation was not honored (code=anchor-not-key active=%{public}d)",
-                   NSApp.isActive);
-    }
-  });
-  return YES;
-}
-
-- (void)dismissDisplayAnchor {
-  if (self.displayAnchorWindow == nil || !self.displayAnchorWindow.isVisible) {
-    return;
-  }
-
-  [self.displayAnchorWindow orderOut:nil];
-  os_log_debug(SHLogNavigation(), "Display anchor window dismissed");
-
-  // The Settings window also runs the app as Regular while it is open and
-  // reverts on close; only drop back to Accessory when nothing else of ours
-  // is showing.
-  for (NSWindow *window in NSApp.windows) {
-    if (window != self.displayAnchorWindow && window.isVisible) {
-      return;
-    }
-  }
-  [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-}
-
-- (void)applicationDidResignActive:(NSNotification *)notification {
-  (void)notification;
-  [self dismissDisplayAnchor];
-}
-
-- (void)windowDidBecomeKey:(NSNotification *)notification {
-  // One of our real windows (e.g. Settings) took focus; the anchor is no
-  // longer needed.
-  if (notification.object != self.displayAnchorWindow) {
-    [self dismissDisplayAnchor];
-  }
 }
 
 - (void)updateMenuBarTitle:(NSString *)menuBarTitle statusText:(NSString *)statusText {

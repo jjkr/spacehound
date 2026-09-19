@@ -583,8 +583,7 @@ auto plan_workspace_request(
 
 auto execute_request(
     const control::request &request,
-    cg::event_source_view synthetic_source,
-    const control::delegate &delegate) -> std::expected<void, control::error> {
+    cg::event_source_view synthetic_source) -> std::expected<void, control::error> {
   const auto name = action_name(request);
   os_log_debug(diagnostics::navigation_log(),
                "Action execution started (type=%{public}s)",
@@ -609,7 +608,7 @@ auto execute_request(
             return std::unexpected(invalid_request_error("Display indices are 1-based."));
           }
 
-          return execute_display_request(typed_request, synthetic_source, delegate);
+          return execute_display_request(typed_request, synthetic_source);
         } else if constexpr (std::is_same_v<request_type, window_focus_request>) {
           return execute_window_focus_request(typed_request);
         } else {

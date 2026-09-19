@@ -66,7 +66,6 @@ struct runtime_context final {
   detail::runtime_config config;
   cg::event_tap_view tap{};
   cg::event_source synthetic_source{};
-  control::delegate delegate{};
   // When set, the event tap stays installed but passes every event through
   // untouched, so a shortcut editor can capture combinations that would
   // otherwise trigger a hotkey or gesture.
@@ -568,8 +567,7 @@ auto hotkey_matches(const detail::compiled_hotkey &hotkey, cg::event_view event)
 auto execute_hotkey(
     runtime_context &context,
     const detail::compiled_hotkey &hotkey) -> std::expected<void, control::error> {
-  return control::detail::execute_request(
-      hotkey.request, context.synthetic_source.view(), context.delegate);
+  return control::detail::execute_request(hotkey.request, context.synthetic_source.view());
 }
 
 auto compile_fast_swipe_replay(
@@ -913,7 +911,6 @@ auto runtime::start(const options &options) -> std::expected<void, error> {
 
   auto started = std::make_unique<impl>();
   started->options = options;
-  started->context.delegate = options.delegate;
   started->settings_path = *settings_path;
   started->apply_settings_document(*settings_document);
   if (!initialize_runtime(

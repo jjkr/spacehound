@@ -6,8 +6,6 @@
 #include <optional>
 #include <string>
 
-#include <spacehound/control.hpp>
-
 namespace spacehound::daemon {
 
 enum class error_code {
@@ -45,9 +43,6 @@ struct observer final {
 struct options final {
   std::optional<std::filesystem::path> settings_path_override;
   observer observer{};
-  // Optional host hooks consulted while executing actions. Called on the
-  // thread that runs the event tap (the one `start` was called from).
-  control::delegate delegate{};
 };
 
 class runtime final {
