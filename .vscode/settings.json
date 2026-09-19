@@ -1,3 +1,4 @@
 {
-    "makefile.configureOnOpen": false
+    "makefile.configureOnOpen": false,
+    "cmake.sourceDirectory": "/Users/joe/work/jjkr/spacehound/spacehound-core"
 }

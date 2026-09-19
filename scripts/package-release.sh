@@ -72,30 +72,21 @@ fi
 
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
-RELEASE_BUILD_VERSION="${RELEASE_BUILD_VERSION:-}"
 SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://updates.spacehound.app/appcast.xml}"
-SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL:-https://beta-updates.spacehound.app/appcast.xml}"
-
-if [[ -n "${RELEASE_VERSION}" ]]; then
-  RELEASE_VERSION="${RELEASE_VERSION#refs/tags/}"
-  RELEASE_VERSION="${RELEASE_VERSION#v}"
-fi
 
 if [[ -z "${RELEASE_VERSION}" ]]; then
-  RELEASE_VERSION="${MARKETING_VERSION:-0.1.0}"
-fi
-
-if [[ -z "${RELEASE_BUILD_VERSION}" ]]; then
-  echo "error: RELEASE_BUILD_VERSION must be set to X.Y.ZfcN" >&2
+  echo "error: RELEASE_VERSION must be set to X.Y.Z" >&2
   exit 1
 fi
+RELEASE_VERSION="${RELEASE_VERSION#refs/tags/}"
+RELEASE_VERSION="${RELEASE_VERSION#v}"
 
-"${ROOT_DIR}/scripts/validate-release-version.sh" \
-  "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" >/dev/null
+"${ROOT_DIR}/scripts/validate-release-version.sh" "${RELEASE_VERSION}" >/dev/null
 
+# CFBundleShortVersionString and CFBundleVersion are both the marketing version.
+# Sparkle compares CFBundleVersion, so every release must bump X.Y.Z.
 MARKETING_VERSION="${RELEASE_VERSION}"
-CURRENT_PROJECT_VERSION="${RELEASE_BUILD_VERSION}"
-RELEASE_ARTIFACT_VERSION="${RELEASE_BUILD_VERSION/fc/-fc}"
+CURRENT_PROJECT_VERSION="${RELEASE_VERSION}"
 
 rm -rf "${BUILD_ROOT}" "${DIST_PATH}" "${DERIVED_DATA_PATH}"
 mkdir -p "${BUILD_ROOT}" "${DIST_PATH}"
@@ -139,7 +130,6 @@ xcodebuild \
   MARKETING_VERSION="${MARKETING_VERSION}" \
   CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION}" \
   SPARKLE_FEED_URL="${SPARKLE_FEED_URL}" \
-  SPARKLE_BETA_FEED_URL="${SPARKLE_BETA_FEED_URL}" \
   SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY}" \
   SENTRY_DSN="${SENTRY_DSN}" \
   archive
@@ -161,27 +151,25 @@ fi
 BUILT_MARKETING_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_PATH}/Contents/Info.plist")
 BUILT_BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${APP_PATH}/Contents/Info.plist")
 BUILT_FEED_URL=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "${APP_PATH}/Contents/Info.plist")
-BUILT_BETA_FEED_URL=$(/usr/libexec/PlistBuddy -c "Print :SUBetaFeedURL" "${APP_PATH}/Contents/Info.plist")
 BUILT_PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "${APP_PATH}/Contents/Info.plist")
 BUILT_SENTRY_DSN=$(/usr/libexec/PlistBuddy -c "Print :SentryDSN" "${APP_PATH}/Contents/Info.plist")
 
 if [[ "${BUILT_MARKETING_VERSION}" != "${RELEASE_VERSION}" ||
-      "${BUILT_BUNDLE_VERSION}" != "${RELEASE_BUILD_VERSION}" ]]; then
-  echo "error: exported app version does not match ${RELEASE_VERSION} (${RELEASE_BUILD_VERSION})" >&2
+      "${BUILT_BUNDLE_VERSION}" != "${RELEASE_VERSION}" ]]; then
+  echo "error: exported app version does not match ${RELEASE_VERSION}" >&2
   exit 1
 fi
 
 if [[ "${BUILT_FEED_URL}" != "${SPARKLE_FEED_URL}" ||
-      "${BUILT_BETA_FEED_URL}" != "${SPARKLE_BETA_FEED_URL}" ||
       "${BUILT_PUBLIC_KEY}" != "${SPARKLE_PUBLIC_ED_KEY}" ||
       "${BUILT_SENTRY_DSN}" != "${SENTRY_DSN}" ]]; then
   echo "error: exported app does not contain the requested Sparkle and Sentry configuration" >&2
   exit 1
 fi
 
-ZIP_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
-DMG_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
-CHECKSUMS_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt"
+ZIP_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-arm64.zip"
+DMG_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-arm64.dmg"
+CHECKSUMS_PATH="${DIST_PATH}/${APP_NAME}-${RELEASE_VERSION}-SHA256SUMS.txt"
 
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 

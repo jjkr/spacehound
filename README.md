@@ -14,13 +14,13 @@ waiting on the built-in animations. The menu bar always shows which Space you're
 
 ## Install
 
-1. Download the [**latest SpaceHound DMG**](https://updates.spacehound.app/releases/latest/SpaceHound-arm64.dmg).
+1. Download the [**latest SpaceHound DMG**](https://github.com/jjkr/spacehound/releases/latest/download/SpaceHound-arm64.dmg).
 2. Open the DMG and drag **SpaceHound** to your Applications folder.
 3. Launch SpaceHound. It appears in the menu bar — there is no Dock icon or main
    window.
 
-The same release artifacts are mirrored on the
-[GitHub Releases page](https://github.com/jjkr/spacehound/releases/latest).
+Every version, including beta pre-releases, is on the
+[GitHub Releases page](https://github.com/jjkr/spacehound/releases).
 
 **Requirements:** macOS 14 (Sonoma) or newer.
 
@@ -57,7 +57,8 @@ menu:
 - **Space _X_ of _Y_** — the current status (or a message if access is needed).
 - **Grant Accessibility Access…** — shown only when access hasn't been granted yet.
 - **Settings…** (⌘,) — open the Settings window.
-- **Receive Beta Updates** — opt into or out of signed release candidates.
+- **Receive Beta Updates** — opt into or out of beta releases, which ship
+  before production releases and are signed and notarized the same way.
 - **Check for Updates…** — check the signed SpaceHound update feed immediately.
 - **Quit SpaceHound** (⌘Q).
 

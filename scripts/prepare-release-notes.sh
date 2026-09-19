@@ -2,18 +2,16 @@
 
 set -euo pipefail
 
-if (( $# != 4 )); then
-  echo "usage: $0 X.Y.Z X.Y.ZfcN source-notes.md output-directory" >&2
+if (( $# != 3 )); then
+  echo "usage: $0 X.Y.Z source-notes.md output-notes.md" >&2
   exit 2
 fi
 
-marketing_version="${1#v}"
-bundle_version="$2"
-source_path="$3"
-output_dir="$4"
+version="${1#v}"
+source_path="$2"
+output_path="$3"
 
-"${0:A:h}/validate-release-version.sh" \
-  "${marketing_version}" "${bundle_version}" >/dev/null
+"${0:A:h}/validate-release-version.sh" "${version}" >/dev/null
 
 if [[ ! -f "${source_path}" ]]; then
   echo "error: release notes not found: ${source_path}" >&2
@@ -27,24 +25,18 @@ if grep -q 'RELEASE_NOTES_PLACEHOLDER' "${source_path}"; then
   echo "error: remove the template placeholder from ${source_path}" >&2
   exit 1
 fi
+if ! grep -q '^## ' "${source_path}"; then
+  echo "error: release notes need at least one second-level heading: ${source_path}" >&2
+  exit 1
+fi
+if grep -q '^# ' "${source_path}"; then
+  echo "error: release notes must not contain a top-level heading; Sparkle and GitHub add the title: ${source_path}" >&2
+  exit 1
+fi
 
-candidate_number="${bundle_version##*fc}"
-artifact_version="${bundle_version/fc/-fc}"
-notes_name="SpaceHound-${artifact_version}-arm64.md"
+# The same Markdown is embedded in the appcast item and used as the GitHub
+# release body, so it is copied verbatim.
+mkdir -p "${output_path:h}"
+cp "${source_path}" "${output_path}"
 
-mkdir -p "${output_dir}/beta" "${output_dir}/production"
-
-{
-  printf '# SpaceHound %s (final candidate %s)\n\n' \
-    "${marketing_version}" "${candidate_number}"
-  cat "${source_path}"
-  printf '\n'
-} > "${output_dir}/beta/${notes_name}"
-
-{
-  printf '# SpaceHound %s\n\n' "${marketing_version}"
-  cat "${source_path}"
-  printf '\n'
-} > "${output_dir}/production/${notes_name}"
-
-echo "Prepared beta and production release notes from ${source_path}"
+echo "Prepared release notes for ${version} at ${output_path}"

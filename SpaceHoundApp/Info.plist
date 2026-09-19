@@ -32,8 +32,6 @@
 	<true/>
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
-	<key>SUBetaFeedURL</key>
-	<string>$(SPARKLE_BETA_FEED_URL)</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>

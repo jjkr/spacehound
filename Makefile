@@ -9,7 +9,7 @@ SENTRY_DSN ?=
 APP_NAME := SpaceHound.app
 APP_PATH := $(DERIVED_DATA_PATH)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
 
-.PHONY: help generate build release package-release release-script-tests infra-install infra-test run open clean distclean app-path
+.PHONY: help generate build release package-release release-script-tests updates-deploy run open clean distclean app-path
 
 help:
 	@echo "SpaceHound development targets"
@@ -18,9 +18,8 @@ help:
 	@echo "  make build              Build $(SCHEME) ($(CONFIGURATION))"
 	@echo "  make release            Build $(SCHEME) with CONFIGURATION=Release (unsigned)"
 	@echo "  make package-release    Archive, sign, notarize, and package Release artifacts"
-	@echo "  make release-script-tests  Test release version validation"
-	@echo "  make infra-install      Install pinned CDK dependencies with mise/npm"
-	@echo "  make infra-test         Type-check and test the CDK stack"
+	@echo "  make release-script-tests  Test the release scripts"
+	@echo "  make updates-deploy     Deploy updates/public to the Cloudflare Worker (manual recovery)"
 	@echo "  make run                Build and launch the app bundle"
 	@echo "  make open               Launch the existing built app bundle"
 	@echo "  make clean              Remove repo-local build artifacts"
@@ -54,12 +53,10 @@ package-release: generate
 release-script-tests:
 	./scripts/tests/release-scripts-test.sh
 
-infra-install:
-	mise exec -- npm --prefix infra ci
-
-infra-test:
-	mise exec -- npm --prefix infra run build
-	mise exec -- npm --prefix infra test
+# Redeploys whatever is in updates/public. Normal releases deploy from CI;
+# use this only to recover, after putting the intended appcast.xml in place.
+updates-deploy:
+	cd updates && mise exec -- npx wrangler deploy
 
 run: build
 	open "$(APP_PATH)"

@@ -155,15 +155,11 @@ static NSString *const SHReceiveBetaUpdatesKey = @"SHReceiveBetaUpdates";
   return [[NSUserDefaults standardUserDefaults] boolForKey:SHReceiveBetaUpdatesKey];
 }
 
-- (nullable NSString *)feedURLStringForUpdater:(SPUUpdater *)updater {
+- (NSSet<NSString *> *)allowedChannelsForUpdater:(SPUUpdater *)updater {
   (void)updater;
-  if (![self receivesBetaUpdates]) {
-    // nil tells Sparkle to use the production SUFeedURL from Info.plist.
-    return nil;
-  }
-
-  NSString *betaFeedURL = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"SUBetaFeedURL"];
-  return betaFeedURL.length > 0 ? betaFeedURL : nil;
+  // Production items carry no channel and are always eligible. Opting in adds
+  // the beta channel, and Sparkle offers the highest version across both.
+  return [self receivesBetaUpdates] ? [NSSet setWithObject:@"beta"] : [NSSet set];
 }
 
 - (void)toggleBetaUpdates:(id)sender {

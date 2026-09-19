@@ -1,5 +1,14 @@
 #!/bin/zsh
 
+# Adds one release to the Sparkle feed.
+#
+# APPCAST_PATH is the currently published feed (fetched from
+# updates.spacehound.app) and is rewritten in place. When the file is absent
+# a new feed is started, which should only happen for the very first release.
+# Existing items are preserved by generate_appcast; the new item is tagged
+# with RELEASE_CHANNEL (normally "beta") and later promoted by
+# promote-appcast.swift.
+
 set -euo pipefail
 
 function require_env() {
@@ -11,13 +20,12 @@ function require_env() {
 }
 
 required_vars=(
-  RELEASE_MARKETING_VERSION
-  RELEASE_BUILD_VERSION
+  RELEASE_VERSION
+  RELEASE_CHANNEL
   UPDATE_ARCHIVE_PATH
   RELEASE_NOTES_PATH
-  APPCAST_OUTPUT_PATH
+  APPCAST_PATH
   DOWNLOAD_URL_PREFIX
-  RELEASE_NOTES_URL_PREFIX
   SPARKLE_ED_PRIVATE_KEY
   SPARKLE_PUBLIC_ED_KEY
   SPARKLE_GENERATE_APPCAST
@@ -28,11 +36,8 @@ for name in "${required_vars[@]}"; do
   require_env "${name}"
 done
 
-marketing_version="${RELEASE_MARKETING_VERSION#v}"
-bundle_version="${RELEASE_BUILD_VERSION}"
-artifact_version="${bundle_version/fc/-fc}"
-"${0:A:h}/validate-release-version.sh" \
-  "${marketing_version}" "${bundle_version}" >/dev/null
+version="${RELEASE_VERSION#v}"
+"${0:A:h}/validate-release-version.sh" "${version}" >/dev/null
 
 if [[ ! -f "${UPDATE_ARCHIVE_PATH}" ]]; then
   echo "error: update archive not found: ${UPDATE_ARCHIVE_PATH}" >&2
@@ -61,18 +66,43 @@ function cleanup() {
 }
 trap cleanup EXIT
 
-archive_name="SpaceHound-${artifact_version}-arm64.zip"
-notes_name="SpaceHound-${artifact_version}-arm64.md"
+item_xpath="/*[local-name()=\"rss\"]/*[local-name()=\"channel\"]/*[local-name()=\"item\"]"
+function feed_items() {
+  xmllint --xpath "count(${item_xpath})" "$1"
+}
+function item_field() {
+  # $1 feed, $2 version, $3 xpath relative to the item
+  xmllint --xpath \
+    "string(${item_xpath}[*[local-name()=\"version\"]=\"$2\"]/$3)" "$1"
+}
+
+archive_name="SpaceHound-${version}-arm64.zip"
+notes_name="SpaceHound-${version}-arm64.md"
 cp "${UPDATE_ARCHIVE_PATH}" "${work_dir}/${archive_name}"
 cp "${RELEASE_NOTES_PATH}" "${work_dir}/${notes_name}"
+
+previous_items=0
+if [[ -s "${APPCAST_PATH}" ]]; then
+  if ! xmllint --noout "${APPCAST_PATH}"; then
+    echo "error: existing appcast is not valid XML: ${APPCAST_PATH}" >&2
+    exit 1
+  fi
+  "${0:A:h}/validate-release-version.sh" "${version}" "${APPCAST_PATH}" >/dev/null
+  cp "${APPCAST_PATH}" "${work_dir}/appcast.xml"
+  previous_items=$(feed_items "${work_dir}/appcast.xml")
+  echo "Merging ${version} into existing feed with ${previous_items} item(s)"
+else
+  echo "warning: no existing appcast at ${APPCAST_PATH}; starting a new feed" >&2
+fi
 
 print -rn -- "${SPARKLE_ED_PRIVATE_KEY}" | "${SPARKLE_GENERATE_APPCAST}" \
   --ed-key-file - \
   --download-url-prefix "${DOWNLOAD_URL_PREFIX%/}/" \
-  --release-notes-url-prefix "${RELEASE_NOTES_URL_PREFIX%/}/" \
+  --embed-release-notes \
   --link "https://github.com/jjkr/spacehound" \
-  --versions "${bundle_version}" \
-  --maximum-versions 1 \
+  --versions "${version}" \
+  --channel "${RELEASE_CHANNEL}" \
+  --maximum-versions 3 \
   --maximum-deltas 0 \
   -o "${work_dir}/appcast.xml" \
   "${work_dir}"
@@ -87,35 +117,45 @@ if ! xmllint --noout "${work_dir}/appcast.xml"; then
   exit 1
 fi
 
-appcast_version=$(xmllint --xpath \
-  'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="version"])' \
-  "${work_dir}/appcast.xml")
-appcast_marketing_version=$(xmllint --xpath \
-  'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="shortVersionString"])' \
-  "${work_dir}/appcast.xml")
-enclosure_url=$(xmllint --xpath \
-  'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@url)' \
-  "${work_dir}/appcast.xml")
-minimum_system_version=$(xmllint --xpath \
-  'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="minimumSystemVersion"])' \
-  "${work_dir}/appcast.xml")
-hardware_requirements=$(xmllint --xpath \
-  'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="hardwareRequirements"])' \
-  "${work_dir}/appcast.xml")
-enclosure_signature=$(xmllint --xpath \
-  'string(/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][1]/*[local-name()="enclosure"]/@*[local-name()="edSignature"])' \
-  "${work_dir}/appcast.xml")
+feed="${work_dir}/appcast.xml"
+item_count=$(xmllint --xpath \
+  "count(${item_xpath}[*[local-name()=\"version\"]=\"${version}\"])" "${feed}")
+if [[ "${item_count}" != "1" ]]; then
+  echo "error: generated appcast has ${item_count} items for ${version}; expected exactly 1" >&2
+  exit 1
+fi
+
+marketing_version=$(item_field "${feed}" "${version}" '*[local-name()="shortVersionString"]')
+channel=$(item_field "${feed}" "${version}" '*[local-name()="channel"]')
+enclosure_url=$(item_field "${feed}" "${version}" '*[local-name()="enclosure"]/@url')
+enclosure_length=$(item_field "${feed}" "${version}" '*[local-name()="enclosure"]/@length')
+enclosure_signature=$(item_field "${feed}" "${version}" '*[local-name()="enclosure"]/@*[local-name()="edSignature"]')
+minimum_system_version=$(item_field "${feed}" "${version}" '*[local-name()="minimumSystemVersion"]')
+hardware_requirements=$(item_field "${feed}" "${version}" '*[local-name()="hardwareRequirements"]')
+description_format=$(item_field "${feed}" "${version}" '*[local-name()="description"]/@*[local-name()="format"]')
+release_notes_link=$(item_field "${feed}" "${version}" '*[local-name()="releaseNotesLink"]')
 
 expected_url="${DOWNLOAD_URL_PREFIX%/}/${archive_name}"
-if [[ "${appcast_version}" != "${bundle_version}" ||
-      "${appcast_marketing_version}" != "${marketing_version}" ||
-      "${enclosure_url}" != "${expected_url}" ]]; then
-  echo "error: generated appcast has versions ${appcast_marketing_version}/${appcast_version} and URL ${enclosure_url}; expected ${marketing_version}/${bundle_version} and ${expected_url}" >&2
+archive_size=$(stat -f %z "${work_dir}/${archive_name}")
+if [[ "${marketing_version}" != "${version}" ||
+      "${enclosure_url}" != "${expected_url}" ||
+      "${enclosure_length}" != "${archive_size}" ]]; then
+  echo "error: generated item has version ${marketing_version}, URL ${enclosure_url}, length ${enclosure_length}; expected ${version}, ${expected_url}, ${archive_size}" >&2
+  exit 1
+fi
+
+if [[ "${channel}" != "${RELEASE_CHANNEL}" ]]; then
+  echo "error: generated item is on channel '${channel}'; expected '${RELEASE_CHANNEL}'" >&2
   exit 1
 fi
 
 if [[ "${minimum_system_version}" != "14.0" || "${hardware_requirements}" != "arm64" ]]; then
   echo "error: generated appcast must require macOS 14.0 and arm64" >&2
+  exit 1
+fi
+
+if [[ "${description_format}" != "markdown" || -n "${release_notes_link}" ]]; then
+  echo "error: release notes must be embedded as markdown, not linked" >&2
   exit 1
 fi
 
@@ -130,13 +170,20 @@ print -rn -- "${SPARKLE_ED_PRIVATE_KEY}" | "${SPARKLE_SIGN_UPDATE}" \
   "${work_dir}/${archive_name}" \
   "${enclosure_signature}"
 
-if ! grep -q '<!-- sparkle-signatures:' "${work_dir}/appcast.xml"; then
+if ! grep -q '<!-- sparkle-signatures:' "${feed}"; then
   echo "error: generated appcast is missing its signed-feed block" >&2
   exit 1
 fi
 
-mkdir -p "${APPCAST_OUTPUT_PATH:h}"
-cp "${work_dir}/appcast.xml" "${APPCAST_OUTPUT_PATH}"
-cp "${work_dir}/${notes_name}" "${RELEASE_NOTES_PATH}"
+# generate_appcast prunes stale beta items but must never drop the newest
+# production item, or existing users would stop seeing updates.
+new_items=$(feed_items "${feed}")
+if (( previous_items > 0 && new_items < 2 )); then
+  echo "error: generated appcast has ${new_items} item(s) after merging into a feed of ${previous_items}; previous releases were lost" >&2
+  exit 1
+fi
 
-echo "Created signed appcast at ${APPCAST_OUTPUT_PATH}"
+mkdir -p "${APPCAST_PATH:h}"
+cp "${feed}" "${APPCAST_PATH}"
+
+echo "Added ${version} (${RELEASE_CHANNEL}) to signed appcast at ${APPCAST_PATH} (${new_items} items)"

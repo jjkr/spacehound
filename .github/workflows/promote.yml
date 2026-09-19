@@ -1,0 +1,203 @@
+name: Promote
+
+# Runs when a GitHub pre-release is changed to a full release, for example
+# with `gh release edit vX.Y.Z --prerelease=false --latest`. It verifies the
+# published archive, moves that version from the beta channel to the default
+# channel of the Sparkle feed, re-signs the feed, and publishes it. Nothing is
+# rebuilt or re-uploaded: production users get the exact bytes beta users had.
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to promote (vX.Y.Z)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spacehound-release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote beta to production
+    runs-on: macos-26
+    timeout-minutes: 30
+    environment: release
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      SPARKLE_FEED_URL: https://updates.spacehound.app/appcast.xml
+      SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Validate release
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          required_vars=(
+            SPARKLE_ED_PRIVATE_KEY
+            SPARKLE_PUBLIC_ED_KEY
+            CLOUDFLARE_API_TOKEN
+            CLOUDFLARE_ACCOUNT_ID
+          )
+          for name in "${required_vars[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing release environment secret or variable: ${name}"
+              exit 1
+            fi
+          done
+
+          release_version=$(./scripts/validate-release-version.sh "${RELEASE_TAG}")
+          echo "RELEASE_VERSION=${release_version}" >> "${GITHUB_ENV}"
+
+          release_json=$(gh release view "${RELEASE_TAG}" --json isDraft,isPrerelease,assets)
+          if [[ "$(jq -r '.isDraft' <<< "${release_json}")" != "false" ]]; then
+            echo "::error::${RELEASE_TAG} is a draft"
+            exit 1
+          fi
+          if [[ "$(jq -r '.isPrerelease' <<< "${release_json}")" != "false" ]]; then
+            echo "::error::${RELEASE_TAG} is still marked as a pre-release; promote it with: gh release edit ${RELEASE_TAG} --prerelease=false --latest"
+            exit 1
+          fi
+          archive_name="SpaceHound-${release_version}-arm64.zip"
+          if ! jq -e --arg name "${archive_name}" '.assets[] | select(.name == $name)' <<< "${release_json}" >/dev/null; then
+            echo "::error::${RELEASE_TAG} has no ${archive_name} asset"
+            exit 1
+          fi
+
+      - name: Fetch published appcast
+        run: |
+          set -euo pipefail
+          ./scripts/fetch-live-appcast.sh "${SPARKLE_FEED_URL}" updates/public/appcast.xml
+
+      - name: Install build tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+      - name: Verify the published archive matches the feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          sparkle_bin=$(./scripts/resolve-sparkle-tools.sh)
+          appcast=updates/public/appcast.xml
+          item='/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"][*[local-name()="version"]="'"${RELEASE_VERSION}"'"]'
+
+          [[ "$(xmllint --xpath "count(${item})" "${appcast}")" == "1" ]] || {
+            echo "::error::The published appcast does not contain exactly one item for ${RELEASE_VERSION}"
+            exit 1
+          }
+          [[ "$(xmllint --xpath "string(${item}/*[local-name()=\"channel\"])" "${appcast}")" == "beta" ]] || {
+            echo "::error::${RELEASE_VERSION} is not on the beta channel; it was never released as a beta or is already promoted"
+            exit 1
+          }
+          feed_url=$(xmllint --xpath "string(${item}/*[local-name()=\"enclosure\"]/@url)" "${appcast}")
+          feed_length=$(xmllint --xpath "string(${item}/*[local-name()=\"enclosure\"]/@length)" "${appcast}")
+          feed_signature=$(xmllint --xpath "string(${item}/*[local-name()=\"enclosure\"]/@*[local-name()=\"edSignature\"])" "${appcast}")
+          expected_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/SpaceHound-${RELEASE_VERSION}-arm64.zip"
+          [[ "${feed_url}" == "${expected_url}" ]] || {
+            echo "::error::Feed item points at ${feed_url}, expected ${expected_url}"
+            exit 1
+          }
+
+          # Download what users will actually receive and check it against the
+          # signature the feed already carries.
+          mkdir -p build/promote
+          curl --fail --silent --show-error --location \
+            --output build/promote/SpaceHound.zip "${feed_url}"
+          archive_size=$(stat -f %z build/promote/SpaceHound.zip)
+          [[ "${archive_size}" == "${feed_length}" ]] || {
+            echo "::error::Downloaded archive is ${archive_size} bytes; the feed says ${feed_length}"
+            exit 1
+          }
+          echo -n "${SPARKLE_ED_PRIVATE_KEY}" | "${sparkle_bin}/sign_update" \
+            --verify --ed-key-file - build/promote/SpaceHound.zip "${feed_signature}"
+
+          verify_dir="${RUNNER_TEMP}/spacehound-promote"
+          mkdir -p "${verify_dir}"
+          ditto -x -k build/promote/SpaceHound.zip "${verify_dir}"
+          app="${verify_dir}/SpaceHound.app"
+          codesign --verify --deep --strict --verbose=2 "${app}"
+          spctl --assess --type execute --verbose=4 "${app}"
+          xcrun stapler validate "${app}"
+
+          info="${app}/Contents/Info.plist"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${info}")" == 'com.jjkr.spacehound' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info}")" == "${RELEASE_VERSION}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info}")" == "${RELEASE_VERSION}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "${info}")" == "${SPARKLE_FEED_URL}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "${info}")" == "${SPARKLE_PUBLIC_ED_KEY}" ]]
+
+      - name: Move the release to the production channel and re-sign the feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          sparkle_bin=$(./scripts/resolve-sparkle-tools.sh)
+          appcast=updates/public/appcast.xml
+          items='/*[local-name()="rss"]/*[local-name()="channel"]/*[local-name()="item"]'
+
+          echo -n "${SPARKLE_ED_PRIVATE_KEY}" | xcrun swift \
+            ./scripts/validate-sparkle-key-pair.swift "${SPARKLE_PUBLIC_ED_KEY}"
+
+          before_default=$(xmllint --xpath "count(${items}[not(*[local-name()=\"channel\"])])" "${appcast}")
+          xcrun swift ./scripts/promote-appcast.swift "${appcast}" "${RELEASE_VERSION}"
+          echo -n "${SPARKLE_ED_PRIVATE_KEY}" | "${sparkle_bin}/sign_update" --ed-key-file - "${appcast}"
+          echo -n "${SPARKLE_ED_PRIVATE_KEY}" | "${sparkle_bin}/sign_update" --verify --ed-key-file - "${appcast}"
+
+          xmllint --noout "${appcast}"
+          after_default=$(xmllint --xpath "count(${items}[not(*[local-name()=\"channel\"])])" "${appcast}")
+          promoted_channel=$(xmllint --xpath "string(${items}[*[local-name()=\"version\"]=\"${RELEASE_VERSION}\"]/*[local-name()=\"channel\"])" "${appcast}")
+          [[ -z "${promoted_channel}" ]] || {
+            echo "::error::${RELEASE_VERSION} still has channel '${promoted_channel}'"
+            exit 1
+          }
+          [[ "${after_default}" == "$(( before_default + 1 ))" ]] || {
+            echo "::error::Expected exactly one item to move to the default channel (${before_default} -> ${after_default})"
+            exit 1
+          }
+          grep -q '<!-- sparkle-signatures:' "${appcast}"
+
+      - name: Publish appcast
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: updates
+          command: deploy
+
+      - name: Keep a copy of the published appcast
+        uses: actions/upload-artifact@v7
+        with:
+          name: appcast-${{ env.RELEASE_TAG }}-production
+          path: updates/public/appcast.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record result
+        if: success()
+        run: |
+          {
+            echo "### ${RELEASE_VERSION} promoted to production"
+            echo
+            echo "- Feed: ${SPARKLE_FEED_URL}"
+            echo "- Download: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/SpaceHound-arm64.dmg"
+          } >> "${GITHUB_STEP_SUMMARY}"

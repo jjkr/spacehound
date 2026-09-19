@@ -2,76 +2,91 @@
 
 This is the operational runbook for publishing SpaceHound. For release
 architecture and local packaging details, see [DEVELOPMENT.md](DEVELOPMENT.md).
-For initial AWS, DNS, OIDC, and GitHub environment setup, see
-[infra/README.md](infra/README.md).
 
 ## Release model
 
-Every release has two identifiers:
+Every release is a Git tag `vX.Y.Z` on `main`. Pushing the tag runs the
+**Release** workflow, which builds, signs, and notarizes the app once, publishes
+it as a GitHub **pre-release**, and adds it to the **beta** channel of the
+Sparkle feed at `https://updates.spacehound.app/appcast.xml`. Only users who
+have enabled **Receive Beta Updates** see it.
 
-- Marketing version: `X.Y.Z`, such as `0.3.0`.
-- Final-candidate number: `N` from 1 through 255, such as `1`.
+After testing, changing the GitHub pre-release into a release runs the
+**Promote** workflow, which moves that version to the production channel of the
+same feed. Promotion never rebuilds or re-uploads anything; production users
+install the exact bytes beta users tested.
 
-Together they produce bundle version `X.Y.ZfcN` and artifact version
-`X.Y.Z-fcN`. The **Release candidate** workflow builds, signs, and notarizes the
-app once, then publishes it to the beta feed. After testing, the separately
-dispatched **Promote release** workflow publishes those exact bytes to
-production. Promotion never rebuilds the app.
-
-The production tag is `vX.Y.Z`. Once a marketing version is promoted, it cannot
-be reused. A beta-only candidate may be replaced by a higher candidate number
-for the same marketing version.
+Versions are never reused. If a beta needs a fix, it stays a pre-release
+forever and the fix ships as the next `X.Y.Z`.
 
 ## One-time prerequisites
 
-Before the first release, complete the infrastructure setup in
-[infra/README.md](infra/README.md) and confirm:
+### Cloudflare
 
-- The `beta` and `production` GitHub environments exist.
-- Each environment has `AWS_RELEASE_REGION`, `AWS_RELEASE_BUCKET`,
-  `AWS_CLOUDFRONT_DISTRIBUTION_ID`, `AWS_RELEASE_ROLE_ARN`, and
-  `SPARKLE_PUBLIC_ED_KEY` variables populated from its CDK stack outputs.
-- The `beta` environment has the public `SENTRY_DSN` variable and the private
-  `SENTRY_AUTH_TOKEN` secret. The token must have `org:ci` access.
-- The `jjkr/spacehound` Sentry project has default data scrubbing enabled
-  and **Prevent Storing of IP Addresses** turned on under Security & Privacy.
-- The candidate workflow can access the Developer ID certificate, Apple
-  notarization, temporary keychain, and Sparkle private-key secrets listed in
-  [DEVELOPMENT.md](DEVELOPMENT.md#release-secrets). Prefer scoping them to the
-  `beta` environment; repository secrets are also supported.
-- The production environment has no private signing material.
-- An encrypted offline backup of the Sparkle private key exists.
-- The AWS infrastructure pipeline has successfully deployed both update stacks.
+The feed is an assets-only Cloudflare Worker defined in `updates/wrangler.jsonc`
+and bound to `updates.spacehound.app` in the existing `spacehound.app` zone.
+The first `wrangler deploy` creates the custom domain and certificate.
 
-The promotion workflow is the manual release gate. It currently permits only
-the GitHub user `jjkr` to promote a candidate.
+Create an API token with the **Edit Cloudflare Workers** template, scoped to
+the account and the `spacehound.app` zone. Note the account ID from the
+Cloudflare dashboard.
+
+### GitHub
+
+Make the repository public before the first release; Sparkle downloads release
+assets without authentication.
+
+Create a `release` GitHub environment and populate it with the secrets and
+variables listed under [Release secrets](DEVELOPMENT.md#release-secrets):
+Developer ID certificate, Apple notarization credentials, Sparkle keys, Sentry
+token and DSN, and the Cloudflare token and account ID. To require a manual
+approval click before either workflow runs, add yourself as a required
+reviewer on that environment.
+
+### Sparkle signing key
+
+Resolve the pinned Sparkle package, then use Sparkle's key tool:
+
+```sh
+sparkle_bin=$(./scripts/resolve-sparkle-tools.sh)
+"${sparkle_bin}/generate_keys" --account com.jjkr.spacehound
+"${sparkle_bin}/generate_keys" --account com.jjkr.spacehound \
+  -x /secure/offline/location/spacehound-sparkle-private-key
+```
+
+The first command prints `SPARKLE_PUBLIC_ED_KEY`. The second exports the
+private seed already stored in Keychain; its target file must not exist
+beforehand. Store that seed as the `release` environment secret
+`SPARKLE_ED_PRIVATE_KEY` and in an encrypted offline backup, then remove every
+unencrypted temporary copy.
+
+### Sentry
+
+The `jjkr/spacehound` Sentry project must have default data scrubbing enabled
+and **Prevent Storing of IP Addresses** turned on under Security & Privacy. The
+`SENTRY_AUTH_TOKEN` needs `org:ci` access.
 
 ## 1. Prepare the release
 
-Choose a marketing version and start its candidate number at `1`. Copy the
-release-note template to a file named for that marketing version, write the
-user-facing notes, and remove the `RELEASE_NOTES_PLACEHOLDER` comment:
+Copy the release-note template to a file named for the version, write the
+user-facing notes under second-level headings, and remove the
+`RELEASE_NOTES_PLACEHOLDER` comment. Do not add a top-level heading; Sparkle
+and GitHub add the title.
 
 ```sh
-cp release-notes/TEMPLATE.md release-notes/v0.3.0.md
+cp release-notes/TEMPLATE.md release-notes/v0.4.0.md
 ```
 
-Use second-level headings in the authored file; the workflow adds the release
-title. Commit the notes with the release changes so they can be reviewed and so
-the candidate commit permanently records what was published.
-
-Preview and validate the beta and production note files locally:
+Commit the notes with the release changes so they are reviewed and the tagged
+commit permanently records what was published. Validate locally:
 
 ```sh
-./scripts/prepare-release-notes.sh \
-  0.3.0 \
-  0.3.0fc1 \
-  release-notes/v0.3.0.md \
-  build/release-notes-preview
+make release-script-tests
+./scripts/prepare-release-notes.sh 0.4.0 release-notes/v0.4.0.md build/notes-preview.md
 ```
 
-Confirm the desired commit is on `main`, the branch is synchronized with
-GitHub, and the working tree is clean:
+Confirm the commit is on `main`, the branch is synchronized with GitHub, and
+the working tree is clean:
 
 ```sh
 git switch main
@@ -79,166 +94,102 @@ git pull --ff-only
 git status --short
 ```
 
-Run the release checks. This example prepares `0.3.0` candidate `1`:
+## 2. Release to beta
 
 ```sh
-make release-script-tests
-./scripts/validate-release-version.sh 0.3.0 0.3.0fc1
-./scripts/check-release-availability.sh jjkr/spacehound 0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
-The availability check uses the GitHub CLI, so `gh auth status` must succeed.
-Do not proceed if the tag or release already exists.
-
-## 2. Build and publish the beta candidate
-
-From GitHub, open **Actions**, choose **Release candidate**, select **Run
-workflow**, use the `main` branch, and enter the marketing version and candidate
-number.
-
-The equivalent CLI command is:
+Watch the run:
 
 ```sh
-gh workflow run release.yml \
-  --repo jjkr/spacehound \
-  --ref main \
-  -f version=0.3.0 \
-  -f candidate=1
+gh run list --repo jjkr/spacehound --workflow release.yml --limit 3
+gh run watch --repo jjkr/spacehound --interval 10 --exit-status
 ```
 
-Find and monitor the run:
+A successful run publishes:
 
-```sh
-gh run list \
-  --repo jjkr/spacehound \
-  --workflow release.yml \
-  --event workflow_dispatch \
-  --limit 5
-
-gh run watch CANDIDATE_RUN_ID \
-  --repo jjkr/spacehound \
-  --interval 10 \
-  --exit-status
-```
-
-Save the numeric candidate run ID. A successful run publishes:
-
-- Immutable beta artifacts under `releases/vX.Y.Z-fcN/`.
-- Beta `latest` aliases and the beta appcast.
-- A retained GitHub Actions artifact named `SpaceHound-X.Y.Z-fcN` containing
-  the candidate, authored release notes, and production appcast. It is retained
-  for 30 days.
-- The archive's dSYMs to `jjkr/spacehound`. Missing credentials, missing
-  symbols, or a failed upload stops the candidate before publication.
+- GitHub pre-release `v0.4.0` with `SpaceHound-0.4.0-arm64.zip`,
+  `SpaceHound-0.4.0-arm64.dmg`, `SpaceHound-arm64.dmg`, and
+  `SpaceHound-0.4.0-SHA256SUMS.txt`.
+- The feed with a new `0.4.0` item on the `beta` channel, deployed to
+  `https://updates.spacehound.app/appcast.xml`.
+- The archive's dSYMs to Sentry. Missing credentials, missing symbols, or a
+  failed upload stop the release before anything is published.
 
 ## 3. Verify the beta
 
-Do not promote until the beta candidate has been approved. At minimum:
+Do not promote until the beta has been approved. At minimum:
 
-- Confirm `https://beta-updates.spacehound.app/appcast.xml` names the
-  expected `X.Y.ZfcN` bundle version.
-- Confirm the latest beta DMG is reachable at
-  `https://beta-updates.spacehound.app/releases/latest/SpaceHound-arm64.dmg`.
+- Confirm the feed names the version on the beta channel:
+
+  ```sh
+  curl --fail --show-error https://updates.spacehound.app/appcast.xml \
+    | grep -E 'sparkle:(version|channel)'
+  ```
+
 - In an installed copy of SpaceHound, enable **Receive Beta Updates**, choose
-  **Check for Updates…**, and install the candidate.
-- Confirm the update signature is accepted, installation completes, the app
-  relaunches, and its core behavior works.
+  **Check for Updates…**, and install the beta.
+- Confirm the update signature is accepted, the release notes render,
+  installation completes, the app relaunches, and its core behavior works.
+- With **Receive Beta Updates** disabled in another installation, confirm
+  **Check for Updates…** does not offer it.
 - For the first monitored release, use a disposable pre-release build with a
   temporary intentional crash, relaunch it to send the cached event, and confirm
-  Sentry shows the expected release/build with symbolicated SpaceHound frames.
-  Remove the crash trigger before building the candidate that may be published.
-- Record explicit approval to promote this candidate.
+  Sentry shows the expected release with symbolicated SpaceHound frames.
 
-Basic endpoint checks can be run with:
+## 4. Promote to production
 
 ```sh
-curl --fail --show-error \
-  https://beta-updates.spacehound.app/appcast.xml
-curl --fail --show-error --head \
-  https://beta-updates.spacehound.app/releases/latest/SpaceHound-arm64.dmg
+gh release edit v0.4.0 --repo jjkr/spacehound --prerelease=false --latest
 ```
 
-## 4. Promote the approved candidate
-
-From GitHub, open **Actions**, choose **Promote release**, select **Run
-workflow**, use the `main` branch, and enter:
-
-- The successful candidate workflow run ID.
-- The same marketing version used for the candidate.
-- The same candidate number used for the candidate.
-
-The equivalent CLI command is:
+This is the release gate: anyone who can edit releases can promote. The
+**Promote** workflow starts automatically. Watch it:
 
 ```sh
-gh workflow run promote-release.yml \
-  --repo jjkr/spacehound \
-  --ref main \
-  -f candidate_run_id=CANDIDATE_RUN_ID \
-  -f version=0.3.0 \
-  -f candidate=1
+gh run list --repo jjkr/spacehound --workflow promote.yml --limit 3
+gh run watch --repo jjkr/spacehound --interval 10 --exit-status
 ```
 
-Monitor the promotion:
-
-```sh
-gh run list \
-  --repo jjkr/spacehound \
-  --workflow promote-release.yml \
-  --event workflow_dispatch \
-  --limit 5
-
-gh run watch PROMOTION_RUN_ID \
-  --repo jjkr/spacehound \
-  --interval 10 \
-  --exit-status
-```
-
-Promotion validates the source workflow, commit, manifest, signatures,
-notarization tickets, embedded versions, feed URLs, and Sparkle public key. It
-then publishes the immutable production prefix `releases/vX.Y.Z/`, creates the
-stable `vX.Y.Z` tag and GitHub Release, updates the production `latest` aliases
-and appcast, and invalidates the relevant CloudFront paths.
+Promotion fetches the published feed, downloads the archive from the GitHub
+release, verifies it against the feed's EdDSA signature, Developer ID
+signature, notarization ticket, bundle identifier, versions, feed URL, and
+public key, removes the beta channel tag from that item, drops superseded beta
+items, re-signs the feed, and deploys it.
 
 ## 5. Verify production
 
-Confirm the production endpoints and GitHub Release:
-
 ```sh
-curl --fail --show-error \
-  https://updates.spacehound.app/appcast.xml
-curl --fail --show-error --head \
-  https://updates.spacehound.app/releases/latest/SpaceHound-arm64.dmg
-gh release view v0.3.0 --repo jjkr/spacehound
+curl --fail --show-error https://updates.spacehound.app/appcast.xml \
+  | grep -E 'sparkle:(version|channel)'
+curl --fail --show-error --head --location \
+  https://github.com/jjkr/spacehound/releases/latest/download/SpaceHound-arm64.dmg
+gh release view v0.4.0 --repo jjkr/spacehound
 ```
 
-Also disable **Receive Beta Updates** in a stable installation, choose **Check
-for Updates…**, and confirm it sees and installs the new production release.
-Verify that the GitHub tag targets the commit recorded by the candidate run.
+Also disable **Receive Beta Updates** in an installation, choose **Check for
+Updates…**, and confirm it sees and installs the new production release.
 
 ## Corrections and recovery
 
-Use these rules to avoid replacing bytes that may already have been consumed:
-
 | Situation | Action |
 | --- | --- |
-| Candidate fails before immutable beta artifacts are uploaded | Fix the cause and rerun the same candidate if no candidate objects or appcast entry exist. |
-| Candidate fails after immutable upload but before the beta appcast changes | Confirm the appcast still names the previous version. Remove only the orphaned beta version prefix, then retry. |
-| Candidate appears in the beta appcast but needs correction | Keep the published candidate and dispatch a higher candidate number for the same marketing version. |
-| Promotion artifact has expired | Build a new candidate. Candidate workflow artifacts are retained for 30 days. |
-| Promotion fails before the production appcast changes | Inspect the GitHub tag, release, and production prefix before retrying. Remove only an orphaned prefix that was never published in the appcast and has no tag or release. |
-| Marketing version already has a production tag, release, or appcast entry | Use a higher marketing version. Never replace the published version. |
+| Release fails before the GitHub pre-release exists | Fix the cause, then delete and re-push the tag. |
+| Release fails after the pre-release exists but before the feed deploys | The version is invisible to Sparkle. Delete the pre-release and the tag (`gh release delete v0.4.0 --cleanup-tag`), fix the cause, and push the tag again. |
+| Beta is in the feed but needs a fix | Leave it as a pre-release and release the next version. Never delete a release that has appeared in the feed. |
+| Promote fails before the feed deploys | Nothing changed for users. Fix the cause and re-run it: **Actions → Promote → Run workflow** with the tag. |
+| Promote ran but the feed deploy must be redone | Re-run **Promote** manually with the tag. It refuses to run twice for the same version once the feed already shows it on the production channel; in that case redeploy from the run's `appcast-vX.Y.Z-production` artifact with `make updates-deploy`. |
+| A promoted release is bad | Sparkle never downgrades. Stop the rollout by rolling back the Worker in the Cloudflare dashboard (Workers → spacehound-updates → Deployments), then release and promote a fix. |
 
-S3 versioning provides recovery for removed objects, but deletion is still an
-exceptional operation. Resolve the exact bucket, prefix, appcast state, GitHub
-tag, and GitHub Release before removing anything. Never overwrite or delete an
-immutable prefix that has appeared in an appcast.
+Both workflows keep the feed they deployed as a run artifact for 30 days.
 
 ## Key-handling rules
 
 - Never print, commit, or put the Sparkle private key in a command argument.
-- Keep build, Apple notarization, and Sparkle private-key secrets scoped to the
-  beta build environment.
-- Keep production limited to public verification data and its OIDC publisher
-  role.
+  The scripts read it from standard input only.
+- Keep all release secrets scoped to the `release` environment, not the
+  repository.
 - Rotate or recover a signing key only through a separately planned release;
   losing the current private key prevents normal signed updates.

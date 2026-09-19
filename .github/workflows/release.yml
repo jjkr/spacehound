@@ -1,46 +1,36 @@
-name: Release candidate
+name: Release
+
+# Pushing a vX.Y.Z tag builds, signs, and notarizes the app once, publishes it
+# as a GitHub pre-release, and adds it to the beta channel of the Sparkle feed.
+# After testing, promote it with `gh release edit vX.Y.Z --prerelease=false
+# --latest`, which runs the Promote workflow.
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Marketing version (X.Y.Z)"
-        required: true
-        type: string
-      candidate:
-        description: "Final-candidate number (1-255)"
-        required: true
-        default: "1"
-        type: string
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
-  contents: read
-  id-token: write
+  contents: write
 
-# Candidate builds and manual promotions share this lock so neither mutable feed
-# can be updated by two release operations at once.
+# Releases and promotions both rewrite the single published feed, so they
+# never run at the same time.
 concurrency:
   group: spacehound-release
   cancel-in-progress: false
 
 jobs:
-  candidate:
-    name: Build and publish beta candidate
+  release:
+    name: Build and publish beta
     runs-on: macos-26
     timeout-minutes: 90
-    environment: beta
+    environment: release
     env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_BUILD_VERSION: ${{ format('{0}fc{1}', inputs.version, inputs.candidate) }}
-      RELEASE_ARTIFACT_VERSION: ${{ format('{0}-fc{1}', inputs.version, inputs.candidate) }}
+      RELEASE_TAG: ${{ github.ref_name }}
       SPARKLE_FEED_URL: https://updates.spacehound.app/appcast.xml
-      SPARKLE_BETA_FEED_URL: https://beta-updates.spacehound.app/appcast.xml
       SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
       SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-      AWS_REGION: ${{ vars.AWS_RELEASE_REGION }}
-      AWS_RELEASE_BUCKET: ${{ vars.AWS_RELEASE_BUCKET }}
-      AWS_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
-      AWS_RELEASE_ROLE_ARN: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
       CODE_SIGN_IDENTITY: Developer ID Application
       BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -49,26 +39,26 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.DEVELOPMENT_TEAM }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Validate candidate configuration
+      - name: Validate release configuration
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
 
-          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
-            echo "::error::Release candidates must be dispatched from the main branch"
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::Release tags must point at a commit on main"
             exit 1
           fi
 
           required_vars=(
-            AWS_CLOUDFRONT_DISTRIBUTION_ID
-            AWS_REGION
-            AWS_RELEASE_BUCKET
-            AWS_RELEASE_ROLE_ARN
             BUILD_CERTIFICATE_BASE64
             P12_PASSWORD
             BUILD_KEYCHAIN_PASSWORD
@@ -79,50 +69,44 @@ jobs:
             SPARKLE_PUBLIC_ED_KEY
             SENTRY_AUTH_TOKEN
             SENTRY_DSN
+            CLOUDFLARE_API_TOKEN
+            CLOUDFLARE_ACCOUNT_ID
           )
           for name in "${required_vars[@]}"; do
             if [[ -z "${!name:-}" ]]; then
-              echo "::error::Missing beta environment secret or variable: ${name}"
+              echo "::error::Missing release environment secret or variable: ${name}"
               exit 1
             fi
           done
 
-          ./scripts/validate-release-version.sh \
-            "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" >/dev/null
-          release_notes_path="release-notes/v${RELEASE_VERSION}.md"
+          release_version=$(./scripts/validate-release-version.sh "${RELEASE_TAG}")
+          echo "RELEASE_VERSION=${release_version}" >> "${GITHUB_ENV}"
+          echo "DOWNLOAD_URL_PREFIX=https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/" >> "${GITHUB_ENV}"
+
           ./scripts/prepare-release-notes.sh \
-            "${RELEASE_VERSION}" \
-            "${RELEASE_BUILD_VERSION}" \
-            "${release_notes_path}" \
-            "${RUNNER_TEMP}/release-notes-validation" >/dev/null
+            "${release_version}" \
+            "release-notes/v${release_version}.md" \
+            "${RUNNER_TEMP}/release-notes-validation.md" >/dev/null
           ./scripts/tests/release-scripts-test.sh
           [[ -d spacehound-core ]] || {
             echo "::error::Expected spacehound-core/ sources in this repository."
             exit 1
           }
 
-      - name: Reject an already-promoted marketing version
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "::error::A GitHub release for ${RELEASE_TAG} already exists"
+            exit 1
+          fi
+
+      - name: Fetch published appcast and check version ordering
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/check-release-availability.sh "${GITHUB_REPOSITORY}" "${RELEASE_VERSION}"
-
-      - name: Configure beta AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ env.AWS_RELEASE_ROLE_ARN }}
-
-      - name: Check beta version ordering
+          # Only the first release may start a new feed.
+          ALLOW_MISSING_FEED: "1"
         run: |
           set -euo pipefail
-          mkdir -p build
-          if aws s3api head-object \
-            --bucket "${AWS_RELEASE_BUCKET}" \
-            --key appcast.xml >/dev/null 2>&1; then
-            aws s3 cp "s3://${AWS_RELEASE_BUCKET}/appcast.xml" build/current-beta-appcast.xml
-            ./scripts/validate-release-version.sh \
-              "${RELEASE_VERSION}" "${RELEASE_BUILD_VERSION}" \
-              build/current-beta-appcast.xml >/dev/null
+          ./scripts/fetch-live-appcast.sh "${SPARKLE_FEED_URL}" updates/public/appcast.xml
+          if [[ -s updates/public/appcast.xml ]]; then
+            ./scripts/validate-release-version.sh "${RELEASE_VERSION}" updates/public/appcast.xml >/dev/null
           fi
 
       - name: Install build tools
@@ -152,105 +136,69 @@ jobs:
           security list-keychains -d user -s "${KEYCHAIN_PATH}" login.keychain-db
           security default-keychain -d user -s "${KEYCHAIN_PATH}"
 
-      - name: Build, sign, and notarize candidate once
+      - name: Build, sign, and notarize
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: ./scripts/package-release.sh
 
-      - name: Prepare authored release notes
+      - name: Prepare release notes
         run: |
           set -euo pipefail
           ./scripts/prepare-release-notes.sh \
             "${RELEASE_VERSION}" \
-            "${RELEASE_BUILD_VERSION}" \
             "release-notes/v${RELEASE_VERSION}.md" \
-            build/dist
+            "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.md"
 
-      - name: Generate and verify beta and production appcasts
+      - name: Add release to the beta channel of the appcast
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          sparkle_bin="build/DerivedDataRelease/SourcePackages/artifacts/sparkle/Sparkle/bin"
-          archive_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
-          notes_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.md"
-
-          export RELEASE_MARKETING_VERSION="${RELEASE_VERSION}"
-          export UPDATE_ARCHIVE_PATH="build/dist/${archive_name}"
+          sparkle_bin=$(./scripts/resolve-sparkle-tools.sh)
           export SPARKLE_GENERATE_APPCAST="${sparkle_bin}/generate_appcast"
           export SPARKLE_SIGN_UPDATE="${sparkle_bin}/sign_update"
-
-          export RELEASE_NOTES_PATH="build/dist/beta/${notes_name}"
-          export APPCAST_OUTPUT_PATH="build/dist/beta-appcast.xml"
-          export DOWNLOAD_URL_PREFIX="https://beta-updates.spacehound.app/releases/v${RELEASE_ARTIFACT_VERSION}"
-          export RELEASE_NOTES_URL_PREFIX="${DOWNLOAD_URL_PREFIX}"
+          export RELEASE_CHANNEL=beta
+          export UPDATE_ARCHIVE_PATH="build/dist/SpaceHound-${RELEASE_VERSION}-arm64.zip"
+          export RELEASE_NOTES_PATH="build/dist/SpaceHound-${RELEASE_VERSION}-arm64.md"
+          export APPCAST_PATH=updates/public/appcast.xml
           ./scripts/generate-appcast.sh
 
-          export RELEASE_NOTES_PATH="build/dist/production/${notes_name}"
-          export APPCAST_OUTPUT_PATH="build/dist/production-appcast.xml"
-          export DOWNLOAD_URL_PREFIX="https://updates.spacehound.app/releases/v${RELEASE_VERSION}"
-          export RELEASE_NOTES_URL_PREFIX="${DOWNLOAD_URL_PREFIX}"
-          ./scripts/generate-appcast.sh
-
-      - name: Create immutable candidate manifest
+      - name: Create GitHub pre-release
         run: |
           set -euo pipefail
-          shasum -a 256 \
-            "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
-            "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
-            "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt" \
-            build/dist/beta-appcast.xml \
-            "build/dist/beta/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.md" \
-            build/dist/production-appcast.xml \
-            "build/dist/production/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.md" \
-            > build/dist/release-manifest-SHA256SUMS.txt
+          # A stably named DMG lets releases/latest/download/SpaceHound-arm64.dmg
+          # always point at the newest promoted release.
+          cp "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.dmg" build/dist/SpaceHound-arm64.dmg
+          gh release create "${RELEASE_TAG}" \
+            --verify-tag \
+            --prerelease \
+            --title "SpaceHound ${RELEASE_VERSION}" \
+            --notes-file "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.md" \
+            "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.zip" \
+            "build/dist/SpaceHound-${RELEASE_VERSION}-arm64.dmg" \
+            build/dist/SpaceHound-arm64.dmg \
+            "build/dist/SpaceHound-${RELEASE_VERSION}-SHA256SUMS.txt"
 
-      - name: Upload candidate for production promotion
+          # Sparkle downloads from this URL; make sure GitHub serves it before
+          # the feed advertises it.
+          curl --fail --silent --show-error --location --head --output /dev/null \
+            "${DOWNLOAD_URL_PREFIX}SpaceHound-${RELEASE_VERSION}-arm64.zip"
+
+      - name: Publish appcast
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: updates
+          command: deploy
+
+      - name: Keep a copy of the published appcast
         uses: actions/upload-artifact@v7
         with:
-          name: SpaceHound-${{ env.RELEASE_ARTIFACT_VERSION }}
-          path: build/dist
+          name: appcast-${{ env.RELEASE_TAG }}-beta
+          path: updates/public/appcast.xml
           if-no-files-found: error
           retention-days: 30
-
-      - name: Publish immutable beta artifacts
-        run: |
-          set -euo pipefail
-          release_prefix="releases/v${RELEASE_ARTIFACT_VERSION}"
-          archive_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip"
-          dmg_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.dmg"
-          checksums_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-SHA256SUMS.txt"
-          notes_name="SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.md"
-
-          if aws s3api head-object --bucket "${AWS_RELEASE_BUCKET}" \
-            --key "${release_prefix}/${archive_name}" >/dev/null 2>&1; then
-            echo "::error::Beta candidate ${release_prefix} already exists"
-            exit 1
-          fi
-
-          aws s3 cp "build/dist/${archive_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${archive_name}" \
-            --cache-control 'public,max-age=31536000,immutable' --content-type application/zip
-          aws s3 cp "build/dist/${dmg_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${dmg_name}" \
-            --cache-control 'public,max-age=31536000,immutable' --content-type application/x-apple-diskimage
-          aws s3 cp "build/dist/${checksums_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${checksums_name}" \
-            --cache-control 'public,max-age=31536000,immutable' --content-type 'text/plain; charset=utf-8'
-          aws s3 cp "build/dist/beta/${notes_name}" "s3://${AWS_RELEASE_BUCKET}/${release_prefix}/${notes_name}" \
-            --cache-control 'public,max-age=31536000,immutable' --content-type 'text/markdown; charset=utf-8'
-
-      - name: Update beta aliases and publish appcast last
-        run: |
-          set -euo pipefail
-          aws s3 cp "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.zip" \
-            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceHound-arm64.zip" \
-            --cache-control 'no-cache,max-age=0' --content-type application/zip
-          aws s3 cp "build/dist/SpaceHound-${RELEASE_ARTIFACT_VERSION}-arm64.dmg" \
-            "s3://${AWS_RELEASE_BUCKET}/releases/latest/SpaceHound-arm64.dmg" \
-            --cache-control 'no-cache,max-age=0' --content-type application/x-apple-diskimage
-          aws s3 cp build/dist/beta-appcast.xml "s3://${AWS_RELEASE_BUCKET}/appcast.xml" \
-            --cache-control 'no-cache,max-age=0' --content-type 'application/xml; charset=utf-8'
-          aws cloudfront create-invalidation \
-            --distribution-id "${AWS_CLOUDFRONT_DISTRIBUTION_ID}" \
-            --paths '/appcast.xml' '/releases/latest/*'
 
       - name: Clean up keychain
         if: always()
@@ -258,15 +206,16 @@ jobs:
           KEYCHAIN_PATH: ${{ runner.temp }}/app-signing.keychain-db
         run: security delete-keychain "${KEYCHAIN_PATH}" || true
 
-      - name: Record manual promotion instructions
+      - name: Record promotion instructions
         if: success()
         run: |
           {
-            echo "### Beta candidate ready"
+            echo "### Beta ${RELEASE_VERSION} published"
             echo
-            echo "Test the beta feed, then manually run **Promote release** with:"
+            echo "Enable **Receive Beta Updates** in SpaceHound and check for updates."
+            echo "When it is ready for everyone, promote it with:"
             echo
-            echo "- Candidate run ID: \`${GITHUB_RUN_ID}\`"
-            echo "- Version: \`${RELEASE_VERSION}\`"
-            echo "- Candidate: \`${{ inputs.candidate }}\`"
+            echo '```sh'
+            echo "gh release edit ${RELEASE_TAG} --repo ${GITHUB_REPOSITORY} --prerelease=false --latest"
+            echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"

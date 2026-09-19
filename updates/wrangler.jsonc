@@ -1,0 +1,19 @@
+// Assets-only Cloudflare Worker that serves the Sparkle appcast at
+// https://updates.spacehound.app/appcast.xml.
+//
+// public/appcast.xml is not committed: the Release and Promote workflows
+// fetch the published feed, modify it, and deploy the result from here.
+// Deploy manually with `cd updates && npx wrangler deploy` (needs
+// CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the environment).
+{
+  "$schema": "https://esm.sh/wrangler/config-schema.json",
+  "name": "spacehound-updates",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "none"
+  },
+  "routes": [
+    { "pattern": "updates.spacehound.app", "custom_domain": true }
+  ]
+}

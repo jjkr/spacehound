@@ -1,0 +1,5 @@
+# Sparkle checks the feed daily; a short TTL lets promotions reach users
+# quickly without every check hitting the origin.
+/appcast.xml
+  Cache-Control: public, max-age=300
+  Content-Type: application/xml; charset=utf-8

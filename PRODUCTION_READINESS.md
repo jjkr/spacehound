@@ -6,9 +6,10 @@ Last reviewed: July 18, 2026
 
 SpaceHound's binary delivery chain is in strong shape. The current release is
 Developer ID signed, notarized, stapled, protected by the hardened runtime, and
-distributed through signed Sparkle feeds. Beta and production infrastructure are
-isolated, release artifacts are built once and promoted without rebuilding, and
-the public update endpoints are operational.
+distributed through a signed Sparkle feed. Release artifacts are built once,
+published to a beta channel first, and promoted without rebuilding. Binaries
+are hosted as GitHub Release assets and the feed by a Cloudflare Worker, so
+there is no bespoke infrastructure to operate.
 
 The remaining work is concentrated in product behavior and launch operations:
 
@@ -62,7 +63,7 @@ These dependencies are the application's largest ongoing reliability risk. The
 macOS 27-specific work in version 0.3.0 demonstrates that OS releases can change
 the behavior.
 
-Test the signed release candidate—not only a local debug build—on every OS and
+Test the signed beta release—not only a local debug build—on every OS and
 hardware combination being advertised. At minimum, cover macOS 14, 15, 26, and
 27 while they remain supported.
 
@@ -85,7 +86,7 @@ The matrix should include:
 - Accessibility-only operation for hotkeys, gestures, synthetic input, and
   window focus.
 
-Record the tested matrix and known limitations for every release candidate.
+Record the tested matrix and known limitations for every release.
 
 ### 4. Add continuous integration for normal changes
 
@@ -97,8 +98,6 @@ Add a pull-request and main-branch workflow that runs:
 ```sh
 make -C spacehound-core test
 make release-script-tests
-mise exec -- npm --prefix infra run build
-mise exec -- npm --prefix infra test
 make build
 xcodebuild -project SpaceHound.xcodeproj \
   -scheme SpaceHound \
@@ -121,26 +120,26 @@ Also:
 ### 5. Protect the source and release path
 
 At review time, the GitHub repository was private and branch protection was not
-available under its current plan. The production workflow also contains a
-hard-coded actor check as its primary human authorization gate.
+available under its current plan. Promotion is gated only by who can edit
+GitHub releases.
 
 Before launch:
 
-- Enable branch protection or repository rulesets for `main`.
+- Enable branch protection or repository rulesets for `main`, and protect
+  `v*` tags so only release maintainers can create them.
 - Require pull requests, review, and passing CI.
-- Require a GitHub production-environment reviewer.
+- Add a required reviewer to the `release` GitHub environment so every release
+  and promotion waits for an explicit approval.
 - Add `CODEOWNERS` for `.github/workflows/`, `scripts/`, `project.yml`, and
-  `infra/`.
+  `updates/`.
 - Require strong account security and recovery for release maintainers.
 - Pin GitHub Actions to immutable commit SHAs.
-- Replace `curl https://mise.run | sh` in the CDK pipeline with a pinned,
-  checksum-verified installation.
 - Pin Xcode and Homebrew-installed build-tool versions used by releases.
-- Enable Dependabot or Renovate for npm, Swift packages, and GitHub Actions.
+- Enable Dependabot or Renovate for Swift packages and GitHub Actions.
 - Enable secret scanning and push protection where the repository plan permits.
 
-The current AWS OIDC trust is appropriately restricted to the exact repository
-and GitHub environment. Preserve that property.
+The Cloudflare API token should be scoped to Workers on the single account and
+zone, and nothing else. Preserve that property.
 
 ### 6. Add diagnostics and supportability
 
@@ -235,16 +234,17 @@ before significant marketing.
 
 The existing release architecture already has several valuable controls:
 
-- The candidate is built, signed, and notarized once.
-- Production promotion reuses the exact beta bytes.
-- Sparkle archives and feeds are signed with Ed25519.
+- Each release is built, signed, and notarized once.
+- Production promotion reuses the exact beta bytes: it only edits the feed.
+- Sparkle archives and the feed are signed with Ed25519, so neither GitHub nor
+  Cloudflare needs to be trusted for integrity.
 - The embedded public key is verified during release generation and promotion.
-- Promotion verifies checksums, code signature, Gatekeeper acceptance,
-  notarization tickets, metadata, appcast contents, and candidate commit.
-- Release operations share a global concurrency lock.
-- Production and beta use separate AWS accounts, buckets, distributions, domains,
-  GitHub environments, and publisher roles.
-- Production has no private signing material.
+- Promotion downloads the published archive and verifies its feed signature,
+  length, code signature, Gatekeeper acceptance, notarization ticket, and
+  bundle metadata before touching the feed.
+- Release operations share a global concurrency lock and always start from the
+  published feed, so a release cannot silently drop earlier items.
+- Versions are strictly increasing and never reused.
 
 Additional improvements:
 
@@ -255,7 +255,7 @@ Additional improvements:
 - Write and rehearse a Sparkle signing-key rotation procedure.
 - Monitor Developer ID certificate expiration well before release day.
 - Keep a known-good previous signed artifact readily available.
-- Add a pre-promotion checklist sign-off tied to the candidate run ID.
+- Add a pre-promotion checklist sign-off tied to the release tag.
 - Add an explicit hotfix procedure. Sparkle users cannot be reliably rescued by
   silently pointing the feed at an older version; a bad public release normally
   requires a higher-version fixed release.
@@ -264,44 +264,36 @@ Additional improvements:
 
 ### Existing strengths
 
-The update infrastructure currently provides:
+The update delivery path currently provides:
 
-- Private S3 buckets with public access blocked.
-- Server-side encryption and enforced TLS.
-- Object versioning and retention on stack deletion.
-- CloudFront Origin Access Control.
-- TLS 1.2 or newer at CloudFront.
-- Long-lived caching for versioned artifacts.
-- No-cache behavior and explicit invalidation for appcasts and `latest` aliases.
-- Narrow GitHub OIDC publisher roles scoped to an exact environment.
-- Separate beta and production environments.
-- Immutable versioned paths by workflow convention.
-- Five-minute synthetic validation of both appcasts and their current downloads.
-- Per-environment CloudWatch dashboards and alarms for endpoint health,
-  CloudFront errors and bandwidth, and ACM certificate expiry.
+- Release binaries on GitHub Releases: no bandwidth cost, no bucket to secure,
+  and release assets are immutable by convention.
+- A single-file feed on an assets-only Cloudflare Worker with a five-minute
+  cache TTL, so promotions reach users quickly.
+- Deployment history in Cloudflare, so a bad feed deploy can be rolled back
+  from the dashboard in one step.
+- A copy of every deployed feed kept as a workflow artifact for 30 days.
+- No infrastructure code to maintain. The earlier AWS design (per-environment
+  S3, CloudFront, Route 53, OIDC roles, synthetic canaries, and CloudWatch
+  alarms) was removed deliberately; the signed feed and signed archives make
+  the hosting untrusted, and the operational surface was out of proportion to
+  a single-developer app.
 
 ### Add before or shortly after launch
 
-- Route the existing CloudWatch alarms to a monitored notification channel.
-- Alerts for failed release jobs.
-- AWS cost alarms.
-- CloudFront access logging with an explicit retention and privacy policy.
-- S3 lifecycle rules for old noncurrent object versions.
-- A periodic restore exercise for retained S3 object versions.
-- Monitoring for Apple certificate and GitHub credential failures. DNS and TLS
-  delivery are already covered by the synthetic checks, and ACM expiry has a
-  dedicated alarm.
+- An external uptime check on `https://updates.spacehound.app/appcast.xml`
+  and the latest download URL, with notifications. This replaces the removed
+  canaries.
+- Alerts for failed release and promote workflow runs.
+- Monitoring for Apple certificate and GitHub credential failures.
 - A documented incident procedure for:
   - Broken or unavailable appcasts.
   - A bad application release.
-  - Compromised GitHub, AWS, Apple, or Sparkle credentials.
-  - Accidental overwrite of a mutable alias.
+  - Compromised GitHub, Cloudflare, Apple, or Sparkle credentials.
   - Loss of a signing key or certificate.
-  - Unexpected download-cost spikes.
 
-WAF is not an immediate requirement for static signed downloads. Monitoring,
-cost controls, credential protection, and recovery procedures are more valuable
-at the expected launch scale.
+WAF and rate limiting are not requirements for static signed downloads served
+by GitHub and Cloudflare at the expected launch scale.
 
 ## Website and public documentation requirements
 
@@ -321,30 +313,30 @@ The website implementation is out of scope for this document, but it must expose
 
 Do not link unauthenticated users to releases or issues in a private repository.
 
-## Release-candidate acceptance checklist
+## Release acceptance checklist
 
 Use this checklist for every public release.
 
 ### Code and automation
 
-- [ ] Pull-request CI passed on the candidate commit.
+- [ ] Pull-request CI passed on the tagged commit.
 - [ ] Core tests passed with no unexpected skips.
 - [ ] App Debug and Release builds passed.
 - [ ] Xcode static analysis passed.
-- [ ] Release-script and infrastructure tests passed.
+- [ ] Release-script tests passed.
 - [ ] Dependency and license scans passed.
 - [ ] Release notes were reviewed and contain no placeholder text.
-- [ ] The working tree and candidate commit are recorded.
+- [ ] The tag points at the reviewed commit on `main`.
 
-### Signed candidate
+### Signed release
 
 - [ ] Developer ID signature validates deeply and strictly.
 - [ ] Gatekeeper accepts the app.
 - [ ] App and DMG notarization tickets validate.
 - [ ] Hardened runtime is enabled.
-- [ ] Bundle identifier, marketing version, and build version are correct.
+- [ ] Bundle identifier and version are correct.
 - [ ] Minimum macOS version and architecture match public requirements.
-- [ ] Sparkle production and beta URLs are correct.
+- [ ] Sparkle feed URL is correct.
 - [ ] Sparkle public key and signed feed validate.
 - [ ] dSYM and build manifest are retained privately.
 
@@ -365,14 +357,14 @@ Use this checklist for every public release.
 
 ### Update acceptance
 
-- [ ] Beta appcast reports the intended candidate.
-- [ ] Beta DMG and ZIP download successfully.
-- [ ] Update from the previous production version succeeds.
+- [ ] The feed reports the intended version on the beta channel.
+- [ ] The GitHub pre-release DMG and ZIP download successfully.
+- [ ] Update from the previous production version succeeds with beta enabled.
 - [ ] The app relaunches and retains settings.
-- [ ] Beta-channel enable and disable behavior is understood.
-- [ ] A human explicitly approved the candidate run ID for promotion.
-- [ ] Production appcast and latest aliases were verified after promotion.
-- [ ] GitHub/public mirror behavior matches published documentation.
+- [ ] With beta disabled, the version is not offered.
+- [ ] A human explicitly approved the tag for promotion.
+- [ ] The feed and `releases/latest/download/SpaceHound-arm64.dmg` were
+      verified after promotion.
 - [ ] External monitors remain green after promotion.
 
 ### Launch operations
@@ -381,7 +373,7 @@ Use this checklist for every public release.
 - [ ] Privacy policy and third-party notices are published.
 - [ ] Incident and hotfix procedures are accessible to the maintainer.
 - [ ] Signing-key and certificate backups are verified.
-- [ ] Cost alarms and endpoint monitors are active.
+- [ ] Endpoint monitors are active.
 - [ ] The previous known-good release is retained.
 
 ## Verification performed during this review
@@ -390,19 +382,16 @@ The following checks passed on July 18, 2026:
 
 - All 79 native/core tests passed. Three environment-dependent test cases were
   skipped by their own test preconditions.
-- All 9 infrastructure tests passed.
-- Infrastructure TypeScript type-check passed.
 - Release-script tests passed.
-- The production npm dependency audit reported zero known vulnerabilities.
 - The unsigned Debug application build succeeded.
 - Xcode Release static analysis succeeded with no analyzer diagnostics.
-- Production and beta appcasts returned HTTP 200 and served version `0.3.0fc1`.
-- The latest production DMG endpoint returned HTTP 200.
+- The (since replaced) AWS-hosted appcasts returned HTTP 200 and served
+  version `0.3.0fc1`; the GitHub/Cloudflare path has not yet shipped a release.
 - The published production ZIP contained an arm64 app with a macOS 14 minimum.
 - Deep code-signature validation passed.
 - Gatekeeper accepted the app as Notarized Developer ID software.
 - The hardened-runtime signature and stapled notarization ticket validated.
-- The distributed app contained the expected Sparkle feed URLs and public key.
+- The distributed app contained the expected Sparkle feed URL and public key.
 
 ## Recommended implementation order
 
@@ -413,7 +402,7 @@ The following checks passed on July 18, 2026:
 5. Add structured logs, About/Diagnostics, dSYM retention, and support links.
 6. Add third-party notices, privacy policy, and public security/support contacts.
 7. Execute and record the full supported-OS and display matrix.
-8. Add alarm notification routing, cost alarms, lifecycle rules, and incident
+8. Add external endpoint monitoring, workflow failure alerts, and incident
    runbooks.
-9. Ship a beta candidate, test update from the prior release, and promote the exact
+9. Ship a beta, test the update from the prior release, and promote the exact
    approved bytes.

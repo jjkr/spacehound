@@ -126,28 +126,37 @@ For the step-by-step release procedure, use the canonical
 [release runbook](RELEASING.md). This section documents the underlying packaging
 and distribution design.
 
-Production updates are hosted at `https://updates.spacehound.app`; beta
-updates use `https://beta-updates.spacehound.app`. Each environment has its
-own private S3 bucket, CloudFront distribution, certificate, hosted zone, and
-GitHub publisher role. GitHub Releases contains the production mirror. The repo
-includes:
+Release binaries are GitHub Release assets. The Sparkle feed is a single signed
+`appcast.xml` served by an assets-only Cloudflare Worker at
+`https://updates.spacehound.app/appcast.xml`; release notes are embedded in the
+feed, so the Worker serves one file. Beta and production share that feed:
+every release is first added as a Sparkle `beta` channel item and a GitHub
+pre-release, and promotion removes the channel tag and re-signs the feed
+without touching the binaries. The repo includes:
 
 - `scripts/package-release.sh` to archive an arm64-only release build, sign it
   with Developer ID, notarize a ZIP of the app, staple the app, build a DMG, then
   notarize and staple the DMG.
-- `scripts/generate-appcast.sh` to generate and verify a signed Sparkle appcast
-  without exposing the private signing key in process arguments.
-- `.github/workflows/release.yml` to build one notarized candidate and publish it
-  to beta, plus `.github/workflows/promote-release.yml` to manually approve and
-  promote those exact bytes.
+- `scripts/generate-appcast.sh` to merge one release into the published feed as
+  a signed beta item, without exposing the private signing key in process
+  arguments.
+- `scripts/promote-appcast.swift` to move one item from the beta channel to the
+  default channel and drop superseded beta items. `sign_update` re-signs the
+  feed afterwards.
+- `scripts/fetch-live-appcast.sh` and `scripts/resolve-sparkle-tools.sh`,
+  shared by both workflows.
+- `.github/workflows/release.yml`, triggered by pushing a `vX.Y.Z` tag, to build
+  one notarized release, publish it as a GitHub pre-release, and add it to the
+  beta channel. `.github/workflows/promote.yml`, triggered when that pre-release
+  is changed to a release, to promote those exact bytes.
 - `release-notes/vX.Y.Z.md` files for reviewed, user-facing Sparkle and GitHub
   Release notes. Copy `release-notes/TEMPLATE.md` when preparing a version.
-- `infra/` for the self-mutating CDK Pipeline and independent beta/production
-  stacks. See
-  [`infra/README.md`](infra/README.md) for the one-time setup.
+- `updates/` for the Cloudflare Worker configuration. `updates/public/appcast.xml`
+  is written by the workflows and is not committed.
 
-The workflow is globally serialized before checking published version ordering,
-so concurrent jobs cannot roll either mutable feed or `latest` alias back.
+Both workflows share one concurrency group and start by fetching the published
+feed, so two release operations can never interleave their edits. A release is
+rejected unless its version is greater than every version already in the feed.
 Appcast generation also derives the public key from the private signing secret
 and refuses to continue unless it matches `SPARKLE_PUBLIC_ED_KEY` embedded in
 the app.
@@ -158,28 +167,24 @@ installer helpers are embedded and signed by Xcode.
 
 ### Version contract
 
-Release inputs use a marketing version `X.Y.Z` and a final-candidate number
-`N` from 1 through 255. The app gets `CFBundleShortVersionString=X.Y.Z` and
-`CFBundleVersion=X.Y.ZfcN`; candidate artifacts use `X.Y.Z-fcN` in their names.
-The exact same ZIP and DMG are first published to beta and later promoted to
-production. Promotion creates the stable `vX.Y.Z` Git tag but does not rebuild
-the app. A beta-only candidate can be corrected with a higher candidate number.
-After `X.Y.Z` is promoted, that marketing version cannot be reused; corrections
-must use a higher marketing version.
-
-A legacy appcast version written as plain `X.Y.Z` sorts after every `X.Y.ZfcN`.
-If `0.1.0` was already published by the old workflow, start this candidate flow
-at `0.1.1fc1`, not `0.1.0fc1`.
+A release is identified by its Git tag `vX.Y.Z`. The app gets
+`CFBundleShortVersionString=X.Y.Z` and `CFBundleVersion=X.Y.Z`; Sparkle
+compares `CFBundleVersion`, so every release, including a beta that only fixes
+a previous beta, uses a new `X.Y.Z`. Artifacts are named
+`SpaceHound-X.Y.Z-arm64.zip` and `SpaceHound-X.Y.Z-arm64.dmg`. The exact same
+ZIP is first offered to beta users and later promoted to production. A beta
+that should not ship is simply never promoted; the correction is the next
+version.
 
 ### Release secrets
 
 The personal Apple Developer team must own the explicit macOS App ID
 `com.jjkr.spacehound`. Export that team's **Developer ID Application**
 certificate together with its private key as a password-protected `.p12`; the
-release workflow rejects promoted artifacts with any other bundle identifier.
+promote workflow rejects archives with any other bundle identifier.
 
-Set these secrets on the `beta` GitHub environment, because the beta job is the
-only job that builds, signs, notarizes, and creates appcasts:
+Both workflows run in the `release` GitHub environment. Set these secrets on
+it:
 
 - `BUILD_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
 - `P12_PASSWORD`: password for the `.p12`
@@ -190,23 +195,18 @@ only job that builds, signs, notarizes, and creates appcasts:
 - `SPARKLE_ED_PRIVATE_KEY`: the exported Sparkle private seed
 - `SENTRY_AUTH_TOKEN`: Sentry organization token with `org:ci` access, used only
   by `sentry-cli` to upload release dSYMs
+- `CLOUDFLARE_API_TOKEN`: token with Workers edit permission for the account
+  and the `spacehound.app` zone
 
-Set these variables separately on both `beta` and `production` environments,
-using the outputs from that environment's CDK stack:
+And these variables:
 
-- Variable `SPARKLE_PUBLIC_ED_KEY`: the matching base64 public key.
-- Variable `AWS_RELEASE_ROLE_ARN`: CDK output `GitHubPublisherRoleArn`.
-- Variable `AWS_RELEASE_BUCKET`: CDK output `ArtifactBucketName`.
-- Variable `AWS_CLOUDFRONT_DISTRIBUTION_ID`: CDK output `DistributionId`.
-- Variable `AWS_RELEASE_REGION`: `us-east-1`.
-- Variable `SENTRY_DSN`: the public DSN for the `jjkr/spacehound` Sentry
-  project. Only `beta` needs it because production promotes the same app bytes.
+- `SPARKLE_PUBLIC_ED_KEY`: the matching base64 public key.
+- `SENTRY_DSN`: the public DSN for the `jjkr/spacehound` Sentry project.
+- `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account that owns the zone.
 
-The production environment does not need the certificate, Apple credentials,
-or Sparkle private key. The separately dispatched **Promote release** workflow
-is the release gate and rejects any actor other than `jjkr`. Repository-level
-secrets may be used instead, but keeping the signing material scoped to `beta`
-makes the build-once boundary explicit.
+Promotion is whoever can edit GitHub releases in the repository. For an
+explicit approval step, add a required reviewer to the `release` environment;
+both workflows will then wait for approval before running.
 
 Keep an encrypted offline backup of the Sparkle private key. Do not print it,
 place it in command arguments, or commit it. Losing it prevents new signed-feed
@@ -217,8 +217,7 @@ updates until a deliberate key-recovery or rotation release is performed.
 ```sh
 export DEVELOPMENT_TEAM=YOURTEAMID
 export CODE_SIGN_IDENTITY="Developer ID Application"
-export RELEASE_VERSION=0.1.0
-export RELEASE_BUILD_VERSION=0.1.0fc1
+export RELEASE_VERSION=0.4.0
 export SPARKLE_PUBLIC_ED_KEY="YOUR_PUBLIC_KEY"
 export SENTRY_DSN="YOUR_PUBLIC_SENTRY_DSN"
 export SENTRY_AUTH_TOKEN="YOUR_SENTRY_ORG_TOKEN"
@@ -228,27 +227,20 @@ export APPLE_API_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 make package-release
 ```
 
-Dispatch **Release candidate** from the `main` branch with `version=X.Y.Z` and
-`candidate=N`. The workflow publishes beta first. Testers enable **Receive Beta
-Updates** in the menu bar and validate the candidate. When it passes, dispatch
-**Promote release** with the successful candidate run ID and the same version
-and candidate number. Promotion is restricted to `jjkr`; it checks out the
-candidate commit, downloads and verifies that run's retained artifact, publishes
-the production appcast, and creates `vX.Y.Z` plus its GitHub Release. Do not run
-promotion to leave the candidate beta-only.
+Push a `vX.Y.Z` tag on `main` to release. The workflow publishes the beta
+first. Testers enable **Receive Beta Updates** in the menu bar and validate it.
+When it passes, change the GitHub pre-release to a release; the promote
+workflow verifies the published archive against the feed, moves the item to the
+default channel, re-signs the feed, and deploys it. Leave the pre-release flag
+set to keep a version beta-only.
 
-If a job fails after uploading versioned objects but before publishing the
-appcast, that release is not visible to Sparkle. Confirm the appcast still
-points to the previous version, then remove only the orphaned version prefix
-before retrying. S3 versioning retains removed object versions for recovery.
-Never remove or replace a prefix that has appeared in an appcast; publish a
-higher candidate for a beta-only correction or a higher marketing version after
-production promotion.
+If the release job fails after creating the GitHub pre-release but before
+deploying the feed, that release is not visible to Sparkle. Delete the
+pre-release and its tag, fix the problem, and push the tag again. Never delete
+a release that has appeared in the feed; publish a higher version instead.
 
-Run the local validation suites with:
+Run the local validation suite with:
 
 ```sh
 make release-script-tests
-make infra-install
-make infra-test
 ```

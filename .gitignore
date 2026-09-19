@@ -5,6 +5,7 @@ SpaceHound.xcodeproj/
 *.xcuserstate
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
-infra/cdk.out/
-infra/node_modules/
+updates/public/appcast.xml
+updates/node_modules/
+updates/.wrangler/
 .pnpm-store/
