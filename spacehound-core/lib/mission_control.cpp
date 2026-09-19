@@ -600,11 +600,46 @@ void highlight_frontmost_window_when_space_appears(
   dispatch::to_main_after_ms(overlay_poll_interval_ms, poll_overlay_highlight, job);
 }
 
+auto next_display_with_thumbnails(
+    std::span<const display_record> displays,
+    std::span<const window_record> windows,
+    std::optional<pid_t> only_pid,
+    std::size_t start_index,
+    bool forward,
+    bool wrap) -> std::optional<std::size_t> {
+  const auto count = displays.size();
+  if (start_index >= count) {
+    return std::nullopt;
+  }
+
+  auto index = start_index;
+  for (std::size_t visited = 0; visited < count; ++visited) {
+    if (!thumbnails_on_display(windows, displays[index].bounds, only_pid).empty()) {
+      return index;
+    }
+
+    if (forward) {
+      if (index + 1 == count && !wrap) {
+        return std::nullopt;
+      }
+      index = (index + 1) % count;
+    } else {
+      if (index == 0 && !wrap) {
+        return std::nullopt;
+      }
+      index = (index + count - 1) % count;
+    }
+  }
+
+  return std::nullopt;
+}
+
 auto highlight_frontmost_on_display(
     cg::event_source_view synthetic_source,
-    const display_record &display) -> std::expected<void, control::error> {
+    const display_record &display,
+    std::optional<pid_t> only_pid) -> std::expected<void, control::error> {
   overlay_snapshot snapshot;
-  if (const auto loaded = load_overlay_snapshot(display, overlay_app_filter(), snapshot); !loaded) {
+  if (const auto loaded = load_overlay_snapshot(display, only_pid, snapshot); !loaded) {
     return std::unexpected(loaded.error());
   }
 

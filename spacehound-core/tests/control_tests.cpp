@@ -554,6 +554,36 @@ TEST(control_tests, thumbnails_on_display_filter_windows_and_sort_in_reading_ord
       (std::vector<CGWindowID>{4U, 1U, 5U}));
 }
 
+TEST(control_tests, next_display_with_thumbnails_skips_empty_displays) {
+  const std::vector<detail::display_record> displays{
+      {.display_id = 1, .uuid = "a", .bounds = make_rect(0, 0, 1000, 800)},
+      {.display_id = 2, .uuid = "b", .bounds = make_rect(1000, 0, 1000, 800)},
+      {.display_id = 3, .uuid = "c", .bounds = make_rect(2000, 0, 1000, 800)},
+  };
+  // Windows on displays a and c only; the one on b belongs to another app.
+  const std::vector<detail::window_record> windows{
+      make_window(1U, make_rect(100, 100, 300, 200)),
+      make_window(2U, make_rect(2100, 100, 300, 200)),
+      {.window_id = 3U, .pid = 2, .layer = 0, .bounds = make_rect(1100, 100, 300, 200), .is_onscreen = true},
+  };
+  const auto next = [&](std::size_t start, bool forward, bool wrap) {
+    return detail::next_display_with_thumbnails(
+        std::span{displays}, std::span{windows}, 1, start, forward, wrap);
+  };
+
+  EXPECT_EQ(next(1, true, false), 2U);   // b is empty: on to c
+  EXPECT_EQ(next(1, false, false), 0U);  // and back to a
+  EXPECT_EQ(next(2, true, false), 2U);   // c itself has windows
+  EXPECT_EQ(next(1, true, true), 2U);
+  EXPECT_EQ(detail::next_display_with_thumbnails(
+                std::span{displays}, std::span{windows}, 3, 1, true, false),
+            std::nullopt);               // nothing for pid 3 without wrapping
+  EXPECT_EQ(detail::next_display_with_thumbnails(
+                std::span{displays}, std::span{windows}, 3, 1, true, true),
+            std::nullopt);               // nor with it
+  EXPECT_EQ(next(5, true, true), std::nullopt);
+}
+
 TEST(control_tests, thumbnail_index_lookup_uses_half_open_frames) {
   const std::vector<detail::thumbnail_record> thumbnails{
       make_thumbnail(1U, make_rect(0, 0, 100, 100)),

@@ -288,10 +288,23 @@ void highlight_frontmost_window_when_space_appears(
 
 // Hovers `display`'s frontmost thumbnail right away (the overlay is already
 // up) and moves the cycle session to that display; with no thumbnails there
-// the session only remembers the display.
+// the session only remembers the display. `only_pid` as in
+// `thumbnails_on_display`.
 [[nodiscard]] auto highlight_frontmost_on_display(
     cg::event_source_view synthetic_source,
-    const display_record &display) -> std::expected<void, control::error>;
+    const display_record &display,
+    std::optional<pid_t> only_pid) -> std::expected<void, control::error>;
+
+// The first display at or after `start_index`, stepping right (`forward`) or
+// left and wrapping around only with `wrap`, that has thumbnails; none when
+// no display in that direction has any.
+[[nodiscard]] auto next_display_with_thumbnails(
+    std::span<const display_record> displays,
+    std::span<const window_record> windows,
+    std::optional<pid_t> only_pid,
+    std::size_t start_index,
+    bool forward,
+    bool wrap) -> std::optional<std::size_t>;
 
 // The display overlay-mode requests act on: the cycle session's while the
 // session is current (hovering never moves the menu bar, so the window

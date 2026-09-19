@@ -843,17 +843,47 @@ auto execute_display_request(
   }
 
   const auto &target_display = displays[plan.target_index];
-  if (request.move_cursor_to_target_display &&
-      !ensure_cursor_on_display(synthetic_source, target_display.bounds)) {
-    return std::unexpected(runtime_error("Failed to move the cursor to the target display."));
-  }
-
   if (overlay) {
-    const auto result = highlight_frontmost_on_display(synthetic_source, target_display);
+    // App Exposé shows one app: stepping left/right skips displays it has
+    // no windows on, rather than parking on an empty display.
+    const auto only_pid = overlay_app_filter();
+    auto target_index = plan.target_index;
+    if (only_pid && request.action != control::display_action::go_to) {
+      std::vector<window_record> windows;
+      if (!load_on_screen_windows(windows)) {
+        return std::unexpected(runtime_error("Failed to enumerate on-screen windows."));
+      }
+      const auto next = next_display_with_thumbnails(
+          std::span{displays},
+          std::span{windows},
+          only_pid,
+          plan.target_index,
+          request.action == control::display_action::right,
+          request.wrap);
+      if (!next || *next == *resolved_index) {
+        os_log_info(diagnostics::navigation_log(),
+                    "Display switch found no other display with thumbnails");
+        return {};
+      }
+      target_index = *next;
+    }
+
+    const auto &overlay_target = displays[target_index];
+    if (request.move_cursor_to_target_display &&
+        !ensure_cursor_on_display(synthetic_source, overlay_target.bounds)) {
+      return std::unexpected(runtime_error("Failed to move the cursor to the target display."));
+    }
+
+    const auto result = highlight_frontmost_on_display(synthetic_source, overlay_target, only_pid);
     os_log_info(diagnostics::navigation_log(),
                 "Display switch moved the overlay highlight (total=%{public}lldms)",
                 static_cast<long long>(elapsed_ms()));
     return result;
+  }
+
+  if (request.move_cursor_to_target_display &&
+      !ensure_cursor_on_display(synthetic_source, target_display.bounds)) {
+    return std::unexpected(runtime_error("Failed to move the cursor to the target display."));
   }
 
   std::vector<window_record> windows;
