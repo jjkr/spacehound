@@ -46,6 +46,7 @@ struct display_request final {
   display_action action = display_action::left;
   std::size_t index = 0;
   bool wrap = false;
+  bool move_cursor_to_target_display = true;
 
   [[nodiscard]] auto operator==(const display_request &) const -> bool = default;
 };

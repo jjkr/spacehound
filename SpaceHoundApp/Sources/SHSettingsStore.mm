@@ -76,6 +76,7 @@ auto make_default_settings_dictionary() -> NSDictionary<NSString *, id> * {
     @"hotkeys" : @{},
     @"fastSwipe" : @YES,
     @"moveCursorToActiveDisplay" : @YES,
+    @"moveCursorToTargetDisplay" : @YES,
   };
 }
 
@@ -235,6 +236,7 @@ auto normalized_modifiers(NSString *value, NSError **error) -> NSArray<NSString 
   document.trayScrollInverted = parsed.tray_scroll_inverted;
   document.fastSwipe = parsed.fast_swipe;
   document.moveCursorToActiveDisplay = parsed.move_cursor_to_active_display;
+  document.moveCursorToTargetDisplay = parsed.move_cursor_to_target_display;
 
   NSMutableArray<SHHotkeyItem *> *hotkeys = [NSMutableArray arrayWithCapacity:std::size(known_hotkeys)];
   for (const auto &metadata : known_hotkeys) {
@@ -334,6 +336,7 @@ auto normalized_modifiers(NSString *value, NSError **error) -> NSArray<NSString 
   root[@"trayScrollInverted"] = @(document.trayScrollInverted);
   root[@"fastSwipe"] = @(document.fastSwipe);
   root[@"moveCursorToActiveDisplay"] = @(document.moveCursorToActiveDisplay);
+  root[@"moveCursorToTargetDisplay"] = @(document.moveCursorToTargetDisplay);
   [root removeObjectForKey:@"telemetryEnabled"];
   root[@"hotkeys"] = hotkeys;
 

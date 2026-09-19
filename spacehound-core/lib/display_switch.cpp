@@ -661,7 +661,8 @@ auto execute_display_request(
   }
 
   const auto &target_display = displays[plan.target_index];
-  if (!ensure_cursor_on_display(synthetic_source, target_display.bounds)) {
+  if (request.move_cursor_to_target_display &&
+      !ensure_cursor_on_display(synthetic_source, target_display.bounds)) {
     return std::unexpected(runtime_error("Failed to move the cursor to the target display."));
   }
 
@@ -675,8 +676,22 @@ auto execute_display_request(
     return std::unexpected(runtime_error("Failed to focus a window on the target display."));
   }
 
+  // An empty display can only be activated by clicking it, which moves the
+  // cursor. When the cursor should stay put, remember where it was and put it
+  // back afterwards.
+  std::optional<CGPoint> restore_point;
+  if (!request.move_cursor_to_target_display) {
+    if (const auto cursor_event = cg::event::create(synthetic_source)) {
+      restore_point = cursor_event.location();
+    }
+  }
+
   if (!post_menu_bar_click(synthetic_source, target_display.bounds)) {
     return std::unexpected(runtime_error("Failed to post a fallback menu-bar click."));
+  }
+
+  if (restore_point && cg::warp_mouse_cursor_position(*restore_point) != kCGErrorSuccess) {
+    return std::unexpected(runtime_error("Failed to restore the cursor position."));
   }
 
   return {};

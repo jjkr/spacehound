@@ -106,6 +106,7 @@ TEST(daemon_tests, compile_runtime_config_maps_supported_requests_and_inert_acti
   document.workspace_wrap = true;
   document.display_wrap = true;
   document.move_cursor_to_active_display = false;
+  document.move_cursor_to_target_display = false;
   document.hotkeys["switch_space_left"] = settings::hotkey_setting{
       .key = "h",
       .modifiers = {"option"},
@@ -162,6 +163,7 @@ TEST(daemon_tests, compile_runtime_config_maps_supported_requests_and_inert_acti
           control::display_request{
               .action = control::display_action::left,
               .wrap = true,
+              .move_cursor_to_target_display = false,
           },
           control::workspace_request{
               .action = control::workspace_action::go_to,

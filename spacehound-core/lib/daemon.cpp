@@ -479,6 +479,7 @@ auto compile_action(
     result.request = control::display_request{
         .action = control::display_action::left,
         .wrap = document.display_wrap,
+        .move_cursor_to_target_display = document.move_cursor_to_target_display,
     };
     return result;
   }
@@ -487,6 +488,7 @@ auto compile_action(
     result.request = control::display_request{
         .action = control::display_action::right,
         .wrap = document.display_wrap,
+        .move_cursor_to_target_display = document.move_cursor_to_target_display,
     };
     return result;
   }
@@ -503,6 +505,7 @@ auto compile_action(
           .action = control::display_action::go_to,
           .index = display_index,
           .wrap = document.display_wrap,
+          .move_cursor_to_target_display = document.move_cursor_to_target_display,
       };
       return result;
     }

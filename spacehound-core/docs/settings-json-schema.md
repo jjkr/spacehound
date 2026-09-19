@@ -57,7 +57,8 @@ it is launched outside the app.
     }
   },
   "fastSwipe": true,
-  "moveCursorToActiveDisplay": true
+  "moveCursorToActiveDisplay": true,
+  "moveCursorToTargetDisplay": true
 }
 ```
 
@@ -137,6 +138,19 @@ When `false`, the cursor is left alone and the Space changes on whichever displa
 the cursor is currently on; wrapping and numbered targets are computed against
 that display. The setting has no effect when displays share a single set of
 Spaces.
+
+### `moveCursorToTargetDisplay`
+
+- type: boolean
+- required: no (readers default to `true` when absent)
+- default when generating a fresh file: `true`
+
+Controls whether a display switch (`switch_display_*`) moves the cursor onto the
+destination display. When `true`, the cursor is warped to the top centre of the
+target display before it is activated. When `false`, the cursor is left where it
+is and the target display is activated by focusing its frontmost window. If the
+target display has no windows, it is activated with a synthetic menu-bar click
+and the cursor is then returned to its previous position.
 
 ## `hotkeySetting`
 
@@ -295,7 +309,8 @@ The canonical default document is:
     "expose_toggle": { "key": "e", "modifiers": ["option"], "enabled": true }
   },
   "fastSwipe": true,
-  "moveCursorToActiveDisplay": true
+  "moveCursorToActiveDisplay": true,
+  "moveCursorToTargetDisplay": true
 }
 ```
 
@@ -349,7 +364,7 @@ Readers should enforce at least these rules:
 
 - top-level value must be an object
 - `version` must be a string
-- `workspaceWrap`, `displayWrap`, `trayScroll`, `trayScrollInverted`, `fastSwipe`, and `moveCursorToActiveDisplay` must be booleans
+- `workspaceWrap`, `displayWrap`, `trayScroll`, `trayScrollInverted`, `fastSwipe`, `moveCursorToActiveDisplay`, and `moveCursorToTargetDisplay` must be booleans
 - `hotkeys` must be an object
 - each `hotkeys` value must be either `null` or a valid `hotkeySetting`
 - `hotkeySetting.key` must be a non-empty string
@@ -388,6 +403,7 @@ This is a practical draft schema for validation tooling. It encodes the canonica
     "trayScrollInverted": { "type": "boolean" },
     "fastSwipe": { "type": "boolean" },
     "moveCursorToActiveDisplay": { "type": "boolean" },
+    "moveCursorToTargetDisplay": { "type": "boolean" },
     "hotkeys": {
       "type": "object",
       "additionalProperties": {
