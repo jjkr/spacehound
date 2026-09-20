@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="logo.png">
-    <img height="210" alt="SpaceHound logo" src="logo-grey.png">
+    <img height="210" alt="SpaceHound logo" src="logo-light.png">
   </picture>
 </p>
 

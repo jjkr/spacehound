@@ -2,15 +2,16 @@
 // SPDX-FileCopyrightText: 2026 Joe Kramer
 // SPDX-License-Identifier: Apache-2.0
 
-// Writes a medium-grey-on-transparent copy of the white-on-transparent logo
-// for light backgrounds, such as the README on GitHub's light theme. Only the
-// color channels are scaled; alpha is kept, so the shape is unchanged. Grey
-// rather than black keeps the logo from looking heavy against a white page.
+// Writes a tinted copy of the white-on-transparent logo for light
+// backgrounds, such as the README on GitHub's light theme. Only the color
+// channels are scaled; alpha is kept, so the shape is unchanged. The tint is
+// the blue-grey of GitHub's classic dark header, which sits more softly on a
+// white page than pure black.
 
 import AppKit
 
-/// Brightness of the output, where 0 is black and 1 leaves the logo white.
-let grey: CGFloat = 0.5
+/// Output color (#24292f); each component scales the matching source channel.
+let tint = (red: CGFloat(0x24) / 255, green: CGFloat(0x29) / 255, blue: CGFloat(0x2f) / 255)
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("error: \(message)\n".utf8))
@@ -18,7 +19,7 @@ func fail(_ message: String) -> Never {
 }
 
 guard CommandLine.arguments.count == 3 else {
-    fail("usage: generate-grey-logo.swift LOGO_PNG OUTPUT_PNG")
+    fail("usage: generate-light-logo.swift LOGO_PNG OUTPUT_PNG")
 }
 
 let inputPath = CommandLine.arguments[1]
@@ -39,9 +40,9 @@ for y in 0..<source.pixelsHigh {
         guard let color = source.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
         output.setColor(
             NSColor(
-                deviceRed: color.redComponent * grey,
-                green: color.greenComponent * grey,
-                blue: color.blueComponent * grey,
+                deviceRed: color.redComponent * tint.red,
+                green: color.greenComponent * tint.green,
+                blue: color.blueComponent * tint.blue,
                 alpha: color.alphaComponent
             ),
             atX: x, y: y
