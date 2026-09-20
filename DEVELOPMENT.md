@@ -134,6 +134,18 @@ On first launch the app creates
 `~/Library/Application Support/SpaceHound/settings.json` if it does not already
 exist, then starts the SpaceHound runtime in-process with that settings path.
 
+## App icon
+
+`logo.png` at the repo root is the source artwork: white on transparent, which
+is also what the README shows. The icon set in
+`SpaceHoundApp/Resources/Assets.xcassets/AppIcon.appiconset` is rendered from
+it on a black rounded square so the icon stays visible in light mode. After
+changing the logo, regenerate every size with:
+
+```bash
+swift scripts/generate-app-icon.swift logo.png SpaceHoundApp/Resources/Assets.xcassets/AppIcon.appiconset
+```
+
 ## Settings schema
 
 The canonical `settings.json` contract shared between the app (writer) and the
