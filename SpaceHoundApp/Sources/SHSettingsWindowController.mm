@@ -600,9 +600,6 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                                                      defer:NO];
   window.title = @"SpaceHound Settings";
   window.releasedWhenClosed = NO;
-  // The window is reused across open/close cycles; without this it would stay
-  // pinned to the Space it was first shown on and drag the user back there.
-  window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace;
   window.minSize = NSMakeSize(560.0, 560.0);
   window.frameAutosaveName = @"SpaceHoundSettingsWindow";
 
@@ -629,8 +626,35 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   // Regular policy gives the window a real menu bar and Dock presence while it
   // is open; windowWillClose: drops back to a menu-bar-only agent.
   [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+
+  // The window is reused across open/close cycles and keeps its Space
+  // assignment while closed, so a plain managed window would reopen on the
+  // Space it was last shown on and drag the user there. MoveToActiveSpace
+  // fixes that, but it can't stay set: the window server leaves such windows
+  // out of a Space's front-app bookkeeping, so switching away and back would
+  // reactivate the app underneath and bury this window. Apply it only when
+  // the window actually needs moving and revert once it has arrived (see
+  // settleCollectionBehavior). The move happens while the Dock processes the
+  // activation, so reverting any earlier, even on the next run-loop turn or
+  // in windowDidBecomeKey:, cancels it.
+  NSWindow *window = self.window;
+  if (!(window.isVisible && window.isOnActiveSpace)) {
+    window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace;
+  }
   [self showWindow:nil];
   [NSApp activateIgnoringOtherApps:YES];
+}
+
+// Once the window is on screen on the active Space, make it an ordinary
+// managed window again. Called from every delegate hook that can follow the
+// Space move: windowDidChangeOcclusionState: fires when the window becomes
+// visible on the new Space, which is the one that lands after a reopen from a
+// different Space.
+- (void)settleCollectionBehavior {
+  NSWindow *window = self.window;
+  if (window.isVisible && window.isOnActiveSpace) {
+    window.collectionBehavior = NSWindowCollectionBehaviorManaged;
+  }
 }
 
 - (void)buildInterface {
@@ -1352,7 +1376,13 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 - (void)windowDidBecomeKey:(NSNotification *)notification {
   (void)notification;
+  [self settleCollectionBehavior];
   [self updateInputSuspension];
+}
+
+- (void)windowDidChangeOcclusionState:(NSNotification *)notification {
+  (void)notification;
+  [self settleCollectionBehavior];
 }
 
 - (void)windowDidResignKey:(NSNotification *)notification {
@@ -1367,13 +1397,12 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   self.recorderListening = NO;
   [self updateInputSuspension];
 
-  // Return to a menu-bar-only agent. Hiding hands activation to the next app
-  // on the current Space so the menu bar is never left blank with SpaceHound
-  // as an invisible frontmost app.
+  // Return to a menu-bar-only agent. Dropping to Accessory while active hands
+  // activation to the next app on the current Space. Do not hide the app to
+  // do that: once it has been hidden, macOS stops restoring it as the front
+  // app when the user returns to the Space the settings window is on, so a
+  // reopened window ends up behind other windows after a Space round trip.
   [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-  if (NSApp.isActive) {
-    [NSApp hide:nil];
-  }
 }
 
 - (void)presentSettingsError:(NSError *)error {
