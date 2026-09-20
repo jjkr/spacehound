@@ -365,6 +365,12 @@ static CGFloat SHStatusItemLengthForTitle(NSString *title) {
     [self.runtimeHost start];
     return;
   }
+  // The menu item is the recovery path when the app is missing from the
+  // Accessibility list — its entry was removed, or the binary changed and TCC
+  // no longer matches it. Only the AX prompt API re-registers the app, so ask
+  // for access first; macOS shows its own dialog only when the app is not yet
+  // listed, and there is no alert of ours for it to stack on top of here.
+  [SHPermissions requestAccessibilityAccess];
   [self beginRequestingAccessibilityAccess];
 }
 
@@ -474,9 +480,10 @@ static CGFloat SHStatusItemLengthForTitle(NSString *title) {
 
 - (void)beginRequestingAccessibilityAccess {
   // Open System Settings directly rather than calling the AX "prompt" API — the
-  // latter triggers a second, redundant macOS dialog on top of our own. The app
-  // is already registered in the Accessibility list by our AXIsProcessTrusted()
-  // checks, so it appears in the list ready to toggle.
+  // latter triggers a second, redundant macOS dialog on top of our own launch
+  // alert. Note that AXIsProcessTrusted() does not register the app in the
+  // Accessibility list; only the prompt API does, which is why the menu item
+  // path calls it before coming here.
   [SHPermissions openAccessibilitySettings];
   [self startAccessibilityPolling];
 }

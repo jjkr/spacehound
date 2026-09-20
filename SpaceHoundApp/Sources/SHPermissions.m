@@ -14,6 +14,13 @@
   return AXIsProcessTrusted() != NO;
 }
 
++ (BOOL)requestAccessibilityAccess {
+  NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt : @YES};
+  const BOOL trusted = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options) != NO;
+  os_log_info(SHLogPermissions(), "Requested Accessibility access (trusted=%{public}d)", trusted);
+  return trusted;
+}
+
 + (void)openAccessibilitySettings {
   NSURL *url = [NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?"
                                     @"Privacy_Accessibility"];
