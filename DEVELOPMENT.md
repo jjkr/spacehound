@@ -136,15 +136,22 @@ exist, then starts the SpaceHound runtime in-process with that settings path.
 
 ## App icon
 
-`logo.png` at the repo root is the source artwork: white on transparent, which
-is also what the README shows. The icon set in
-`SpaceHoundApp/Resources/Assets.xcassets/AppIcon.appiconset` is rendered from
-it on a black rounded square so the icon stays visible in light mode. After
-changing the logo, regenerate every size with:
+`logo.png` at the repo root is the source artwork, white on transparent. Two
+things are derived from it and must be regenerated after it changes:
 
-```bash
-swift scripts/generate-app-icon.swift logo.png SpaceHoundApp/Resources/Assets.xcassets/AppIcon.appiconset
-```
+- The icon set in `SpaceHoundApp/Resources/Assets.xcassets/AppIcon.appiconset`,
+  rendered on a black rounded square so the icon stays visible in light mode:
+
+  ```bash
+  swift scripts/generate-app-icon.swift logo.png SpaceHoundApp/Resources/Assets.xcassets/AppIcon.appiconset
+  ```
+
+- `logo-black.png`, the same shape in black, which the README's `<picture>`
+  element shows on light backgrounds (`logo.png` is used for dark):
+
+  ```bash
+  swift scripts/generate-black-logo.swift logo.png logo-black.png
+  ```
 
 ## Settings schema
 

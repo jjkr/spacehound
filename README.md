@@ -1,5 +1,8 @@
 <p align="center">
-  <img height="170" src="https://github.com/jjkr/spacehound/blob/main/logo.png">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo.png">
+    <img height="170" alt="SpaceHound logo" src="logo-black.png">
+  </picture>
 </p>
 
 <h1 align="center">SpaceHound</h1>
