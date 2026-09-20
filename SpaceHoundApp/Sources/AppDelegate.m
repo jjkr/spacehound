@@ -15,7 +15,6 @@
 
 @property(nonatomic, strong) NSStatusItem *statusItem;
 @property(nonatomic, strong) NSMenu *statusMenu;
-@property(nonatomic, strong) NSMenuItem *runtimeStatusItem;
 @property(nonatomic, strong) NSMenuItem *grantAccessItem;
 @property(nonatomic, strong) NSMenuItem *testCrashItem;
 @property(nonatomic, strong) SHRuntimeHost *runtimeHost;
@@ -54,21 +53,17 @@
     return;
   }
 
-  button.toolTip = @"SpaceHound";
-  button.image = [self menuBarIcon];
+  button.image = nil;
 
   self.runtimeHost = [[SHRuntimeHost alloc] init];
+  button.title = self.runtimeHost.menuBarTitle;
+  button.toolTip = [self toolTipForStatusText:self.runtimeHost.statusText];
   self.statusMenu = [[NSMenu alloc] initWithTitle:@"SpaceHound"];
   self.statusMenu.delegate = self;
 
   NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"SpaceHound" action:nil keyEquivalent:@""];
   titleItem.enabled = NO;
   [self.statusMenu addItem:titleItem];
-
-  self.runtimeStatusItem =
-      [[NSMenuItem alloc] initWithTitle:self.runtimeHost.statusText action:nil keyEquivalent:@""];
-  self.runtimeStatusItem.enabled = NO;
-  [self.statusMenu addItem:self.runtimeStatusItem];
 
   self.grantAccessItem = [[NSMenuItem alloc] initWithTitle:@"Grant Accessibility Access…"
                                                     action:@selector(grantAccess:)
@@ -111,8 +106,12 @@
   self.statusItem.menu = self.statusMenu;
 
   __weak typeof(self) weakSelf = self;
-  self.runtimeHost.stateChangeHandler = ^(NSString *statusText) {
-    weakSelf.runtimeStatusItem.title = statusText;
+  self.runtimeHost.stateChangeHandler = ^(NSString *menuBarTitle, NSString *statusText) {
+    NSStatusBarButton *strongButton = weakSelf.statusItem.button;
+    if (strongButton != nil) {
+      strongButton.title = menuBarTitle;
+      strongButton.toolTip = [weakSelf toolTipForStatusText:statusText];
+    }
   };
 
   self.settingsWindowController = [[SHSettingsWindowController alloc] init];
@@ -331,14 +330,7 @@
   [self presentAccessibilityPrompt];
 }
 
-// The template glyph shown in the menu bar while the app is running normally.
-- (NSImage *)menuBarIcon {
-  NSImage *icon = [NSImage imageWithSystemSymbolName:@"dog" accessibilityDescription:@"SpaceHound"];
-  icon.template = YES;
-  return icon;
-}
-
-// Shows an attention badge in the menu bar instead of the app icon and reveals
+// Shows an attention badge in the menu bar instead of a blank icon and reveals
 // the "Grant Accessibility Access…" menu item.
 - (void)enterNeedsAccessibilityState {
   NSStatusBarButton *button = self.statusItem.button;
@@ -348,21 +340,30 @@
                  accessibilityDescription:@"Accessibility access required"];
     warning.template = YES;
     button.image = warning;
-    button.toolTip = @"SpaceHound — Accessibility access required";
+    button.title = @"";
+    button.toolTip = [self toolTipForStatusText:@"Accessibility access required"];
   }
-  self.runtimeStatusItem.title = @"Accessibility access required";
   self.grantAccessItem.hidden = NO;
 }
 
-// Restores the app icon in place of the attention badge and hides the grant
-// item.
+// Clears the attention badge and hides the grant item so the runtime can drive
+// the menu bar title normally.
 - (void)enterReadyState {
   NSStatusBarButton *button = self.statusItem.button;
   if (button != nil) {
-    button.image = [self menuBarIcon];
-    button.toolTip = @"SpaceHound";
+    button.image = nil;
+    button.toolTip = [self toolTipForStatusText:self.runtimeHost.statusText];
   }
   self.grantAccessItem.hidden = YES;
+}
+
+// The runtime status ("Space 3 of 5", "Stopped", an error) has no menu item of
+// its own; it is surfaced by hovering the menu bar item.
+- (NSString *)toolTipForStatusText:(NSString *)statusText {
+  if (statusText.length == 0) {
+    return @"SpaceHound";
+  }
+  return [NSString stringWithFormat:@"SpaceHound — %@", statusText];
 }
 
 - (void)presentAccessibilityPrompt {
