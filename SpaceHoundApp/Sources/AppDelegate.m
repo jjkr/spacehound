@@ -236,6 +236,27 @@ static CGFloat SHStatusItemLengthForTitle(NSString *title) {
   NSApp.windowsMenu = windowMenu;
 }
 
+// Gives the settings window a chance to save or keep unsaved edits before the
+// app goes away. Both Quit menu items route through terminate:, so this covers
+// them as well as ⌘Q.
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+  (void)sender;
+  SHSettingsWindowController *settings = self.settingsWindowController;
+  if (!settings.hasUnsavedChanges) {
+    return NSTerminateNow;
+  }
+
+  os_log_info(SHLogLifecycle(), "Quit deferred for unsaved settings changes");
+  [settings.window makeKeyAndOrderFront:nil];
+  [NSApp activateIgnoringOtherApps:YES];
+  [settings confirmDiscardingUnsavedChanges:^(BOOL proceed) {
+    os_log_info(SHLogLifecycle(), "Quit %{public}s after unsaved settings prompt",
+                proceed ? "resumed" : "cancelled");
+    [NSApp replyToApplicationShouldTerminate:proceed];
+  }];
+  return NSTerminateLater;
+}
+
 - (void)applicationWillTerminate:(NSNotification *)notification {
   (void)notification;
   os_log_info(SHLogLifecycle(), "Application will terminate");
@@ -247,7 +268,8 @@ static CGFloat SHStatusItemLengthForTitle(NSString *title) {
 - (void)quit:(id)sender {
   (void)sender;
   os_log_info(SHLogLifecycle(), "Quit requested from the status menu");
-  [self.runtimeHost stop];
+  // The runtime stops in applicationWillTerminate:, after the settings window
+  // has had its chance to cancel the quit over unsaved changes.
   [NSApp terminate:nil];
 }
 

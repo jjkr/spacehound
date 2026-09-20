@@ -151,18 +151,27 @@ without losing its binding.
 | Setting | What it does | Default |
 | --- | --- | --- |
 | **Launch at login** | Automatically open SpaceHound when you sign in. | Off |
-| **Receive beta updates** | Opt into beta releases, which ship before production releases and are signed and notarized the same way. | Off |
 | **Wrap workspace navigation** | Loop back to the first Space after the last (and vice-versa). | Off |
-| **Switch workspaces on the focused display** | Change the Space on the display with the focused window (the cursor is not moved). When off, the Space changes on the display under the cursor. | On |
 | **Wrap display navigation** | Loop across the left and right display edges. | Off |
-| **Move cursor to the target display** | Jump the cursor to the destination display when switching displays. When off, the cursor stays where it is. | On |
 | **Enable tray scroll switching** | Scroll over the menu bar icon to change Spaces. | On |
 | **Invert tray scroll direction** | Reverse the scroll direction for switching. | Off |
 | **Enable fast swipe** | Trigger swipe actions with a lighter, quicker gesture. | On |
 
-Changes take effect when you press **Save**. **Reload** discards unsaved edits and
-re-reads the file from disk, and **Reveal in Finder** opens the settings file's
-location.
+### Advanced
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| **Receive beta updates** | Opt into beta releases, which ship before production releases and are signed and notarized the same way. | Off |
+| **Send crash reports** | Send a report to Sentry when SpaceHound crashes. See [Crash reporting](#crash-reporting). | Off |
+| **Switch workspaces on the focused display** | Change the Space on the display with the focused window (the cursor is not moved). When off, the Space changes on the display under the cursor. | On |
+| **Move cursor to the target display** | Jump the cursor to the destination display when switching displays. When off, the cursor stays where it is. | On |
+
+Changes take effect when you press **OK** (which also closes the window) or
+**Apply** (which keeps it open). While there are edits you haven't saved, the
+window shows **Unsaved changes** in its lower-left corner and asks whether to
+save them before it closes, reloads, or the app quits. **Reload** discards
+unsaved edits and re-reads the file from disk, and **Reveal in Finder** opens
+the settings file's location.
 
 The **Launch at login** setting is managed by macOS and does not live in
 `settings.json`. If macOS requires approval, SpaceHound offers to open **System

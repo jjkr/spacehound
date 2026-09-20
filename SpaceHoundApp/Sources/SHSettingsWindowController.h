@@ -19,17 +19,26 @@ typedef BOOL (^SHSettingsApplyHandler)(NSError **error);
 // disabled otherwise.
 @property(nonatomic, assign) BOOL updateChannelSelectable;
 
-// Invoked after Save when the beta-updates opt-in actually changed.
+// Invoked after a save when the beta-updates opt-in actually changed.
 @property(nonatomic, copy, nullable) void (^updateChannelChangedHandler)(void);
 
 // YES when a Sentry DSN is configured. The crash-reporting toggle is disabled
 // otherwise.
 @property(nonatomic, assign) BOOL crashReportingAvailable;
 
-// Invoked after Save when the crash-reporting opt-in actually changed.
+// Invoked after a save when the crash-reporting opt-in actually changed.
 @property(nonatomic, copy, nullable) void (^crashReportingChangedHandler)(void);
 
+// YES while the window is open and its controls differ from what was last
+// loaded from or written to disk.
+@property(nonatomic, readonly) BOOL hasUnsavedChanges;
+
 - (void)showWindowAndActivate;
+
+// Presents the Save / Cancel / Don't Save sheet. The completion receives YES
+// when the caller may proceed (the user chose Don't Save, or chose Save and
+// the save succeeded) and NO when the user cancelled or the save failed.
+- (void)confirmDiscardingUnsavedChanges:(void (^)(BOOL proceed))completion;
 
 @end
 

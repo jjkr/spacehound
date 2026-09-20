@@ -215,6 +215,12 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 @end
 
+// Keys of the unsaved-changes snapshot, one per backing store.
+static NSString *const kSnapshotDocumentKey = @"document";
+static NSString *const kSnapshotBetaUpdatesKey = @"betaUpdates";
+static NSString *const kSnapshotCrashReportingKey = @"crashReporting";
+static NSString *const kSnapshotLaunchAtLoginKey = @"launchAtLogin";
+
 #pragma mark - SHShortcutRecorderView
 
 // Click-to-record shortcut control. Captures the next key combination the user
@@ -479,6 +485,8 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 @interface SHHotkeyRowView : NSView
 
 @property(nonatomic, strong, readonly) SHHotkeyItem *item;
+// Fires whenever the enabled switch or the recorded shortcut changes.
+@property(nonatomic, copy) void (^onChange)(void);
 
 - (instancetype)initWithHotkeyItem:(SHHotkeyItem *)item
                   recordingChanged:(void (^)(BOOL recording))recordingChanged;
@@ -519,6 +527,10 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [_recorder setShortcutKey:item.key modifiers:SHParseModifiers(item.modifiersText ?: @"")];
   _recorder.activeAppearance = item.enabled;
   _recorder.onRecordingChanged = recordingChanged;
+  __weak SHHotkeyRowView *weakSelf = self;
+  _recorder.onChange = ^{
+    [weakSelf notifyChanged];
+  };
 
   [self addSubview:actionLabel];
   [self addSubview:_enabledSwitch];
@@ -544,6 +556,13 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 - (void)enabledChanged:(id)sender {
   (void)sender;
   _recorder.activeAppearance = (_enabledSwitch.state == NSControlStateValueOn);
+  [self notifyChanged];
+}
+
+- (void)notifyChanged {
+  if (self.onChange != nil) {
+    self.onChange();
+  }
 }
 
 - (SHHotkeyItem *)currentItem {
@@ -579,7 +598,16 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 @property(nonatomic, strong) NSSwitch *fastSwipeButton;
 @property(nonatomic, strong) NSStackView *hotkeysStackView;
 @property(nonatomic, strong) NSTextField *statusLabel;
+@property(nonatomic, strong) NSButton *applyButton;
 @property(nonatomic, copy) NSArray<SHHotkeyRowView *> *hotkeyRowViews;
+// Result of the last save or reload. Shown in the footer whenever there are no
+// outstanding edits; the unsaved indicator takes the slot otherwise.
+@property(nonatomic, copy) NSString *statusMessage;
+// Control state as last loaded from or written to disk, keyed by store (see
+// currentSnapshot). nil while the window is closed, which also means "clean".
+@property(nonatomic, strong, nullable) NSMutableDictionary<NSString *, id> *baselineSnapshot;
+@property(nonatomic, assign) BOOL suddenTerminationDisabled;
+@property(nonatomic, assign) BOOL discardPromptPending;
 
 // YES while a recorder is capturing. The runtime block is only engaged when
 // this is true *and* the settings window is key, so hotkeys stay live whenever
@@ -622,7 +650,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 - (void)showWindowAndActivate {
   os_log_info(SHLogSettings(), "Opening settings window");
-  [self reloadFromDisk:nil];
+  [self loadFromDisk];
   // Regular policy gives the window a real menu bar and Dock presence while it
   // is open; windowWillClose: drops back to a menu-bar-only agent.
   [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -702,22 +730,12 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     [self toggleRowForSwitch:self.launchAtLoginButton
                        title:@"Launch at login"
                     subtitle:@"Automatically open SpaceHound when you sign in."],
-    self.betaUpdatesRow,
-    self.crashReportingRow,
     [self toggleRowForSwitch:self.workspaceWrapButton
                        title:@"Wrap workspace navigation"
                     subtitle:@"Loop back to the first workspace after the last."],
-    [self toggleRowForSwitch:self.workspaceTargetsFocusedDisplayButton
-                       title:@"Switch workspaces on the focused display"
-                    subtitle:@"Change the Space on the display with the focused window. When off, the "
-                             @"Space changes on the display under the cursor."],
     [self toggleRowForSwitch:self.displayWrapButton
                        title:@"Wrap display navigation"
                     subtitle:@"Loop across the left and right display edges."],
-    [self toggleRowForSwitch:self.moveCursorToTargetDisplayButton
-                       title:@"Move cursor to the target display"
-                    subtitle:@"Jump the cursor to the destination display when switching displays. "
-                             @"When off, the cursor stays where it is."],
     [self toggleRowForSwitch:self.trayScrollButton
                        title:@"Enable tray scroll switching"
                     subtitle:@"Scroll over the menu bar icon to change workspaces."],
@@ -727,6 +745,21 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                     subtitle:@"Trigger swipe actions with a lighter, quicker gesture."],
   ];
   SHCardView *generalCard = [self cardWithRows:generalRows];
+
+  // Advanced section: the less common options, kept out of the way at the end.
+  NSArray<NSView *> *advancedRows = @[
+    self.betaUpdatesRow,
+    self.crashReportingRow,
+    [self toggleRowForSwitch:self.workspaceTargetsFocusedDisplayButton
+                       title:@"Switch workspaces on the focused display"
+                    subtitle:@"Change the Space on the display with the focused window. When off, the "
+                             @"Space changes on the display under the cursor."],
+    [self toggleRowForSwitch:self.moveCursorToTargetDisplayButton
+                       title:@"Move cursor to the target display"
+                    subtitle:@"Jump the cursor to the destination display when switching displays. "
+                             @"When off, the cursor stays where it is."],
+  ];
+  SHCardView *advancedCard = [self cardWithRows:advancedRows];
 
   // Hotkeys section. The stack lives directly inside the card now; the whole
   // window scrolls rather than the hotkey list scrolling on its own.
@@ -766,7 +799,8 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   SHCardView *settingsFileCard =
       [self cardWithRows:@[ [self settingsFileRowWithButtons:@[ revealButton, reloadButton ]] ]];
 
-  // Footer: status text on the left, Close / Save on the right.
+  // Footer: status text / unsaved indicator on the left, Cancel / Apply / OK
+  // on the right.
   self.statusLabel = [NSTextField labelWithString:@""];
   self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
   self.statusLabel.font = [NSFont systemFontOfSize:11.0];
@@ -777,38 +811,53 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [self.statusLabel setContentHuggingPriority:NSLayoutPriorityDefaultLow
                                forOrientation:NSLayoutConstraintOrientationHorizontal];
 
-  NSButton *closeButton = [NSButton buttonWithTitle:@"Close"
-                                             target:self
-                                             action:@selector(closeWindow:)];
-  closeButton.keyEquivalent = @"\e";
-  closeButton.bezelStyle = NSBezelStyleRounded;
-  NSButton *saveButton = [NSButton buttonWithTitle:@"Save"
-                                            target:self
-                                            action:@selector(saveSettings:)];
-  saveButton.keyEquivalent = @"\r";
-  saveButton.bezelStyle = NSBezelStyleRounded;
+  NSButton *cancelButton = [NSButton buttonWithTitle:@"Cancel"
+                                              target:self
+                                              action:@selector(cancel:)];
+  cancelButton.keyEquivalent = @"\e";
+  cancelButton.bezelStyle = NSBezelStyleRounded;
+  self.applyButton = [NSButton buttonWithTitle:@"Apply"
+                                        target:self
+                                        action:@selector(apply:)];
+  self.applyButton.bezelStyle = NSBezelStyleRounded;
+  NSButton *okButton = [NSButton buttonWithTitle:@"OK"
+                                          target:self
+                                          action:@selector(ok:)];
+  okButton.keyEquivalent = @"\r";
+  okButton.bezelStyle = NSBezelStyleRounded;
 
+  // Gravity areas keep the label pinned left and the buttons pinned right no
+  // matter how wide the label is (an empty label would otherwise leave the
+  // buttons clumped at the leading edge).
   NSStackView *buttonRow = [[NSStackView alloc] initWithFrame:NSZeroRect];
   buttonRow.translatesAutoresizingMaskIntoConstraints = NO;
   buttonRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
   buttonRow.alignment = NSLayoutAttributeCenterY;
   buttonRow.spacing = 8.0;
-  [buttonRow addArrangedSubview:self.statusLabel];
-  [buttonRow addArrangedSubview:closeButton];
-  [buttonRow addArrangedSubview:saveButton];
+  [buttonRow addView:self.statusLabel inGravity:NSStackViewGravityLeading];
+  [buttonRow addView:cancelButton inGravity:NSStackViewGravityTrailing];
+  [buttonRow addView:self.applyButton inGravity:NSStackViewGravityTrailing];
+  [buttonRow addView:okButton inGravity:NSStackViewGravityTrailing];
 
-  // Assemble. General first, then hotkeys, then the settings file; the footer
-  // stays pinned while everything above it scrolls as one document.
+  // Assemble. General first, then hotkeys, the settings file, and finally the
+  // advanced options; the footer stays pinned while everything above it scrolls
+  // as one document.
   NSView *generalHeader = [self groupHeaderTitle:@"General" subtitle:nil];
   NSView *hotkeysHeader = [self groupHeaderTitle:@"Hotkeys"
                                         subtitle:@"Click a shortcut to record a new combination. Turn a row off to disable it."];
   NSView *settingsFileHeader =
       [self groupHeaderTitle:@"Settings File"
-                    subtitle:@"Settings are written here when you press Save. Reload discards unsaved "
-                             @"changes and re-reads the file."];
+                    subtitle:@"Settings are written here when you press OK or Apply. Reload discards "
+                             @"unsaved changes and re-reads the file."];
+  NSView *advancedHeader =
+      [self groupHeaderTitle:@"Advanced"
+                    subtitle:@"Options most people never need to change."];
 
   NSArray<NSView *> *sections = @[
-    generalHeader, generalCard, hotkeysHeader, hotkeysCard, settingsFileHeader, settingsFileCard
+    generalHeader, generalCard,
+    hotkeysHeader, hotkeysCard,
+    settingsFileHeader, settingsFileCard,
+    advancedHeader, advancedCard,
   ];
   for (NSView *view in sections) {
     [rootStack addArrangedSubview:view];
@@ -817,6 +866,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [rootStack setCustomSpacing:8.0 afterView:generalHeader];
   [rootStack setCustomSpacing:8.0 afterView:hotkeysHeader];
   [rootStack setCustomSpacing:8.0 afterView:settingsFileHeader];
+  [rootStack setCustomSpacing:8.0 afterView:advancedHeader];
 
   // A plain container is the document view so it fills the full viewport width
   // (the clip view pins its document to the origin, so insetting the document
@@ -866,9 +916,13 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 #pragma mark - Building blocks
 
+// Switches report edits to the unsaved-changes tracker by default. Switches
+// that need their own action call settingChanged: themselves.
 - (NSSwitch *)makeSwitch {
   NSSwitch *toggle = [[NSSwitch alloc] initWithFrame:NSZeroRect];
   toggle.translatesAutoresizingMaskIntoConstraints = NO;
+  toggle.target = self;
+  toggle.action = @selector(settingChanged:);
   return toggle;
 }
 
@@ -1052,7 +1106,31 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
 - (void)reloadFromDisk:(id)sender {
   (void)sender;
+  if (!self.hasUnsavedChanges) {
+    [self loadFromDisk];
+    return;
+  }
 
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.alertStyle = NSAlertStyleWarning;
+  alert.messageText = @"Discard unsaved changes?";
+  alert.informativeText = @"Reloading re-reads settings.json and throws away the edits you haven't saved.";
+  [alert addButtonWithTitle:@"Discard Changes"];
+  [alert addButtonWithTitle:@"Cancel"];
+  __weak SHSettingsWindowController *weakSelf = self;
+  [alert beginSheetModalForWindow:self.window
+                completionHandler:^(NSModalResponse returnCode) {
+                  if (returnCode == NSAlertFirstButtonReturn) {
+                    os_log_info(SHLogSettings(), "Unsaved changes discarded for reload");
+                    [weakSelf loadFromDisk];
+                  } else {
+                    os_log_info(SHLogSettings(), "Reload cancelled to keep unsaved changes");
+                  }
+                }];
+}
+
+// Re-reads everything from disk and resets the unsaved-changes baseline.
+- (void)loadFromDisk {
   os_log_debug(SHLogSettings(), "Reloading settings from disk");
   NSError *pathError = nil;
   NSURL *settingsURL = [SHSettingsStore settingsFileURL:&pathError];
@@ -1087,14 +1165,33 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [self reloadLaunchAtLoginState];
   [self reloadBetaUpdatesState];
   [self reloadCrashReportingState];
-  self.statusLabel.stringValue = @"";
+  self.statusMessage = @"";
+  [self captureBaseline];
   os_log_info(SHLogSettings(), "Settings reloaded from disk");
 }
 
-- (void)saveSettings:(id)sender {
-  (void)sender;
+- (void)cancel:(id)sender {
+  // Routes through windowShouldClose: so unsaved edits get a prompt, and
+  // windowWillClose: so hotkey suspension is always released.
+  [self.window performClose:sender];
+}
 
+- (void)apply:(id)sender {
+  (void)sender;
+  [self performSave];
+}
+
+- (void)ok:(id)sender {
+  // Only a fully successful save closes the window; any error or approval
+  // sheet keeps it open so the user can see what happened.
+  if ([self performSave]) {
+    [self.window performClose:sender];
+  }
+}
+
+- (BOOL)performSave {
   os_log_info(SHLogSettings(), "Saving settings");
+  NSDictionary<NSString *, id> *snapshot = [self currentSnapshot];
   SHSettingsDocument *document = [[SHSettingsDocument alloc] init];
   document.version = @"1.0";
   document.workspaceWrap = (self.workspaceWrapButton.state == NSControlStateValueOn);
@@ -1121,8 +1218,10 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                  effectiveError.domain,
                  (long)effectiveError.code);
     [self presentSettingsError:effectiveError];
-    return;
+    [self refreshUnsavedState];
+    return NO;
   }
+  self.baselineSnapshot[kSnapshotDocumentKey] = snapshot[kSnapshotDocumentKey];
 
   if (self.applyHandler != nil) {
     NSError *applyError = nil;
@@ -1131,11 +1230,12 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                    "Runtime failed to apply saved settings (domain=%{private}@ code=%{public}ld)",
                    applyError.domain,
                    (long)applyError.code);
-      self.statusLabel.stringValue = @"Saved to disk, but the runtime could not apply the update.";
+      self.statusMessage = @"Saved to disk, but the runtime could not apply the update.";
       if (applyError != nil) {
         [self presentSettingsError:applyError];
       }
-      return;
+      [self refreshUnsavedState];
+      return NO;
     }
   }
 
@@ -1152,6 +1252,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
       self.updateChannelChangedHandler();
     }
   }
+  self.baselineSnapshot[kSnapshotBetaUpdatesKey] = snapshot[kSnapshotBetaUpdatesKey];
 
   // Saving records a choice even when the switch is left off, so the launch
   // prompt never reappears once the user has seen this setting.
@@ -1168,6 +1269,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
       self.crashReportingChangedHandler();
     }
   }
+  self.baselineSnapshot[kSnapshotCrashReportingKey] = snapshot[kSnapshotCrashReportingKey];
 
   const BOOL launchAtLoginEnabled =
       (self.launchAtLoginButton.state == NSControlStateValueOn);
@@ -1176,12 +1278,15 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
       [SHLoginItemManager setEnabled:launchAtLoginEnabled error:&loginItemError];
   const SHLoginItemStatus loginItemStatus = [SHLoginItemManager status];
   [self reloadLaunchAtLoginState];
+  // The switch now reflects whatever the system actually registered.
+  self.baselineSnapshot[kSnapshotLaunchAtLoginKey] = [self currentSnapshot][kSnapshotLaunchAtLoginKey];
 
   if (launchAtLoginEnabled && loginItemStatus == SHLoginItemStatusRequiresApproval) {
     os_log_info(SHLogLoginItem(), "Launch at login requires approval");
-    self.statusLabel.stringValue = @"Saved. Launch at login requires approval.";
+    self.statusMessage = @"Saved. Launch at login requires approval.";
+    [self refreshUnsavedState];
     [self presentLaunchAtLoginApproval];
-    return;
+    return NO;
   }
 
   const BOOL loginItemMatchesRequestedState = launchAtLoginEnabled
@@ -1193,7 +1298,8 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                  "Launch at login did not reach the requested state (domain=%{private}@ code=%{public}ld)",
                  loginItemError.domain,
                  (long)loginItemError.code);
-    self.statusLabel.stringValue = @"Settings saved, but launch at login could not be updated.";
+    self.statusMessage = @"Settings saved, but launch at login could not be updated.";
+    [self refreshUnsavedState];
     [self presentSettingsError:loginItemError ?:
         [NSError errorWithDomain:@"com.jjkr.spacehound.LoginItem"
                             code:1
@@ -1201,11 +1307,115 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                           NSLocalizedDescriptionKey :
                               @"Launch at login could not be updated."
                         }]];
-    return;
+    return NO;
   }
 
-  self.statusLabel.stringValue = @"Saved and applied.";
+  self.statusMessage = @"Saved and applied.";
+  [self refreshUnsavedState];
   os_log_info(SHLogSettings(), "Settings saved and applied");
+  return YES;
+}
+
+#pragma mark - Unsaved changes
+
+// A plain, isEqual:-comparable picture of every control, grouped by the store
+// each part is written to so a partially failed save can update the baseline
+// for just the parts that landed.
+- (NSDictionary<NSString *, id> *)currentSnapshot {
+  NSMutableArray *hotkeys = [NSMutableArray arrayWithCapacity:self.hotkeyRowViews.count];
+  for (SHHotkeyRowView *rowView in self.hotkeyRowViews) {
+    SHHotkeyItem *item = [rowView currentItem];
+    [hotkeys addObject:@[ item.actionID, item.key, item.modifiersText, @(item.enabled) ]];
+  }
+  NSArray *document = @[
+    @(self.workspaceWrapButton.state == NSControlStateValueOn),
+    @(self.workspaceTargetsFocusedDisplayButton.state == NSControlStateValueOn),
+    @(self.displayWrapButton.state == NSControlStateValueOn),
+    @(self.moveCursorToTargetDisplayButton.state == NSControlStateValueOn),
+    @(self.trayScrollButton.state == NSControlStateValueOn),
+    @(self.trayScrollInvertedButton.state == NSControlStateValueOn),
+    @(self.fastSwipeButton.state == NSControlStateValueOn),
+    hotkeys,
+  ];
+  return @{
+    kSnapshotDocumentKey : document,
+    kSnapshotBetaUpdatesKey : @(self.betaUpdatesButton.state == NSControlStateValueOn),
+    kSnapshotCrashReportingKey : @(self.crashReportingButton.state == NSControlStateValueOn),
+    kSnapshotLaunchAtLoginKey : @(self.launchAtLoginButton.state == NSControlStateValueOn),
+  };
+}
+
+- (void)captureBaseline {
+  self.baselineSnapshot = [[self currentSnapshot] mutableCopy];
+  [self refreshUnsavedState];
+}
+
+- (BOOL)hasUnsavedChanges {
+  return self.baselineSnapshot != nil && ![[self currentSnapshot] isEqual:self.baselineSnapshot];
+}
+
+- (void)settingChanged:(id)sender {
+  (void)sender;
+  [self refreshUnsavedState];
+}
+
+// Reflects the dirty state in the footer label and the close widget, and keeps
+// sudden termination off while edits are outstanding so a logout can't drop
+// them without the prompt.
+- (void)refreshUnsavedState {
+  const BOOL dirty = self.hasUnsavedChanges;
+  self.statusLabel.stringValue = dirty ? @"● Unsaved changes" : (self.statusMessage ?: @"");
+  self.window.documentEdited = dirty;
+  self.applyButton.enabled = dirty;
+
+  if (dirty != self.suddenTerminationDisabled) {
+    if (dirty) {
+      [[NSProcessInfo processInfo] disableSuddenTermination];
+    } else {
+      [[NSProcessInfo processInfo] enableSuddenTermination];
+    }
+    self.suddenTerminationDisabled = dirty;
+  }
+}
+
+- (void)confirmDiscardingUnsavedChanges:(void (^)(BOOL proceed))completion {
+  if (!self.hasUnsavedChanges) {
+    completion(YES);
+    return;
+  }
+  if (self.discardPromptPending) {
+    // A prompt is already up; the answer to that one settles this request too.
+    completion(NO);
+    return;
+  }
+  self.discardPromptPending = YES;
+
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.alertStyle = NSAlertStyleWarning;
+  alert.messageText = @"Do you want to save the changes made in SpaceHound Settings?";
+  alert.informativeText = @"Your changes will be lost if you don't save them.";
+  [alert addButtonWithTitle:@"Save"];
+  [alert addButtonWithTitle:@"Cancel"];
+  NSButton *dontSaveButton = [alert addButtonWithTitle:@"Don't Save"];
+  dontSaveButton.keyEquivalent = @"d";
+  dontSaveButton.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+
+  __weak SHSettingsWindowController *weakSelf = self;
+  [alert beginSheetModalForWindow:self.window
+                completionHandler:^(NSModalResponse returnCode) {
+                  SHSettingsWindowController *strongSelf = weakSelf;
+                  strongSelf.discardPromptPending = NO;
+                  if (returnCode == NSAlertFirstButtonReturn) {
+                    os_log_info(SHLogSettings(), "Unsaved changes: save chosen");
+                    completion(strongSelf != nil && [strongSelf performSave]);
+                  } else if (returnCode == NSAlertThirdButtonReturn) {
+                    os_log_info(SHLogSettings(), "Unsaved changes: discard chosen");
+                    completion(YES);
+                  } else {
+                    os_log_info(SHLogSettings(), "Unsaved changes: cancel chosen");
+                    completion(NO);
+                  }
+                }];
 }
 
 - (void)reloadLaunchAtLoginState {
@@ -1234,7 +1444,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 // Confirms the opt-in when the switch is flipped on; the preference itself is
 // only written on Save.
 - (void)betaUpdatesChanged:(id)sender {
-  (void)sender;
+  [self settingChanged:sender];
   if (self.betaUpdatesButton.state != NSControlStateValueOn) {
     return;
   }
@@ -1254,6 +1464,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                     os_log_info(SHLogUpdates(), "Beta update opt-in cancelled");
                     weakSelf.betaUpdatesButton.state = NSControlStateValueOff;
                   }
+                  [weakSelf refreshUnsavedState];
                 }];
 }
 
@@ -1272,11 +1483,6 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                     [SHLoginItemManager openSystemSettings];
                   }
                 }];
-}
-
-- (void)closeWindow:(id)sender {
-  // Routes through windowWillClose: so hotkey suspension is always released.
-  [self.window performClose:sender];
 }
 
 - (void)revealSettingsFile:(id)sender {
@@ -1309,6 +1515,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   if (!trayScrollEnabled) {
     self.trayScrollInvertedButton.state = NSControlStateValueOff;
   }
+  [self settingChanged:sender];
 }
 
 - (void)applyDocumentToControls:(SHSettingsDocument *)document {
@@ -1353,6 +1560,9 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 
     SHHotkeyRowView *rowView = [[SHHotkeyRowView alloc] initWithHotkeyItem:item
                                                          recordingChanged:recordingChanged];
+    rowView.onChange = ^{
+      [weakSelf settingChanged:nil];
+    };
     [rowViews addObject:rowView];
     [self addFullWidthArrangedView:rowView];
     isFirstRow = NO;
@@ -1390,12 +1600,32 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [self updateInputSuspension];
 }
 
+// Every close path (footer Cancel, title-bar widget, Window > Close) goes
+// through performClose:, so this is the single place unsaved edits get a say.
+- (BOOL)windowShouldClose:(NSWindow *)sender {
+  if (!self.hasUnsavedChanges) {
+    return YES;
+  }
+  __weak SHSettingsWindowController *weakSelf = self;
+  [self confirmDiscardingUnsavedChanges:^(BOOL proceed) {
+    if (proceed) {
+      [weakSelf.window close];
+    }
+  }];
+  return NO;
+}
+
 - (void)windowWillClose:(NSNotification *)notification {
   (void)notification;
   // Closing must never leave global hotkey handling suspended. Resigning first
   // responder on close isn't guaranteed to fire the recorder's own reset.
   self.recorderListening = NO;
   [self updateInputSuspension];
+
+  // Whatever was left unsaved is gone; the next open reloads from disk. Dropping
+  // the baseline also re-enables sudden termination.
+  self.baselineSnapshot = nil;
+  [self refreshUnsavedState];
 
   // Return to a menu-bar-only agent. Dropping to Accessory while active hands
   // activation to the next app on the current Space. Do not hide the app to
