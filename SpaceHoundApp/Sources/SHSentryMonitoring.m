@@ -3,6 +3,7 @@
 
 #import "SHSentryMonitoring.h"
 
+#import "SHCrashReporting.h"
 #import "SHLogging.h"
 
 #import <Sentry/Sentry.h>
@@ -37,10 +38,48 @@ static NSString *SHSentryReleaseName(NSBundle *bundle) {
   return [NSString stringWithFormat:@"%@@%@+%@", bundleIdentifier, marketingVersion, buildVersion];
 }
 
-void SHStartSentryMonitoring(void) {
+BOOL SHCrashReportingIsAvailable(void) {
+  return SHSentryDSN() != nil;
+}
+
+// Logged once per process: a restart from Settings would otherwise report the
+// current run as the "previous" one.
+static void SHLogLastRunStatusOnce(void) {
+  static BOOL logged = NO;
+  if (logged) {
+    return;
+  }
+  logged = YES;
+
+  switch (SentrySDK.lastRunStatus) {
+    case SentryLastRunStatusDidCrash:
+      os_log_error(SHLogCrashReporting(), "Previous run ended in a crash; the report is queued for upload");
+      break;
+    case SentryLastRunStatusDidNotCrash:
+      os_log_debug(SHLogCrashReporting(), "Previous run did not crash");
+      break;
+    case SentryLastRunStatusUnknown:
+      os_log_debug(SHLogCrashReporting(), "Previous run crash status is unknown");
+      break;
+  }
+}
+
+void SHStartCrashReportingIfEnabled(void) {
   NSString *dsn = SHSentryDSN();
   if (dsn == nil) {
-    os_log_info(SHLogLifecycle(), "Crash monitoring disabled because no DSN is configured");
+    os_log_info(SHLogCrashReporting(), "Crash reporting disabled because no DSN is configured");
+    return;
+  }
+  if (![SHCrashReporting hasRecordedChoice]) {
+    os_log_info(SHLogCrashReporting(), "Crash reporting not started because the user has not chosen yet");
+    return;
+  }
+  if (![SHCrashReporting isEnabled]) {
+    os_log_info(SHLogCrashReporting(), "Crash reporting disabled by the user");
+    return;
+  }
+  if (SentrySDK.isEnabled) {
+    os_log_debug(SHLogCrashReporting(), "Crash reporting already running");
     return;
   }
 
@@ -52,7 +91,12 @@ void SHStartSentryMonitoring(void) {
     options.dsn = dsn;
     options.releaseName = SHSentryReleaseName(bundle);
     options.dist = buildVersion;
+    // Keeps local test crashes out of the production issue stream.
+#ifdef DEBUG
+    options.environment = @"development";
+#else
     options.environment = @"production";
+#endif
     options.sampleRate = @1.0;
 
     options.enableCrashHandler = YES;
@@ -84,5 +128,19 @@ void SHStartSentryMonitoring(void) {
     options.attachAllThreads = NO;
   }];
 
-  os_log_info(SHLogLifecycle(), "Crash monitoring started");
+  os_log_info(SHLogCrashReporting(), "Crash reporting started");
+  SHLogLastRunStatusOnce();
+}
+
+void SHStopCrashReporting(void) {
+  if (!SentrySDK.isEnabled) {
+    return;
+  }
+  [SentrySDK close];
+  os_log_info(SHLogCrashReporting(), "Crash reporting stopped");
+}
+
+void SHCrashForTesting(void) {
+  os_log_error(SHLogCrashReporting(), "Crashing deliberately to test crash reporting");
+  [SentrySDK crash];
 }

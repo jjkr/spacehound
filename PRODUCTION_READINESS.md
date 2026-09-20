@@ -27,15 +27,20 @@ information that the website must expose, but does not cover its implementation.
 
 ### 1. Crash monitoring and privacy verification
 
-The obsolete telemetry setting has been removed. Distributed builds now use a
+The obsolete telemetry setting has been removed. Distributed builds use a
 privacy-limited Sentry configuration for crashes and uncaught Objective-C
-exceptions only. Release packaging uploads dSYMs and fails if symbol upload is
-unavailable.
+exceptions only. Crash reporting is opt-in: the app asks on first launch, the
+choice is editable with **Send crash reports** in Settings, and nothing is
+sent until the user agrees. Debug builds report to the `development`
+environment so local testing never pollutes production issues. Holding Option
+in the menu bar menu reveals **Test Crash Reporting…**, which crashes the app
+deliberately to verify the pipeline. Release packaging uploads dSYMs and fails
+if symbol upload is unavailable.
 
 Before launch, enable Sentry's default data scrubbing and IP-address scrubbing,
-publish the exact crash-data disclosure, and verify an intentionally crashed
-disposable build produces a correctly symbolicated event. Do not enable broader
-Sentry collection without a separate privacy review.
+publish the exact crash-data disclosure, and use **Test Crash Reporting…** on a
+signed beta to verify that a correctly symbolicated event arrives. Do not enable
+broader Sentry collection without a separate privacy review.
 
 ### 2. State the hardware requirement accurately
 
@@ -158,8 +163,8 @@ Before launch:
 - Add **Report a Problem** and **Support** actions.
 - Preserve the dSYM generated for every production build in Sentry and a private,
   access-controlled release artifact.
-- Verify logs and symbols against an intentionally crashed beta build before
-  relying on them.
+- Verify logs and symbols against a beta build crashed with **Test Crash
+  Reporting…** before relying on them.
 
 ### 7. Complete legal, privacy, and public-support basics
 
@@ -394,7 +399,8 @@ The following checks passed on July 18, 2026:
 
 ## Recommended implementation order
 
-1. Verify Sentry privacy settings and symbolication with a disposable crash build.
+1. Verify Sentry privacy settings and symbolication with **Test Crash
+   Reporting…** on a signed beta.
 2. Verify Accessibility-only operation on clean supported macOS installations.
 3. Decide and publish the Apple Silicon/Intel support policy.
 4. Add PR CI, branch protection, environment approval, and dependency automation.

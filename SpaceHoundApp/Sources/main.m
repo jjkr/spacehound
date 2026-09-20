@@ -10,7 +10,7 @@
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
     os_log_info(SHLogLifecycle(), "Process starting");
-    SHStartSentryMonitoring();
+    SHStartCrashReportingIfEnabled();
     NSApplication *application = [NSApplication sharedApplication];
     AppDelegate *delegate = [[AppDelegate alloc] init];
     application.delegate = delegate;

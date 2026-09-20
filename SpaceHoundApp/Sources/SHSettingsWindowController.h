@@ -22,6 +22,13 @@ typedef BOOL (^SHSettingsApplyHandler)(NSError **error);
 // Invoked after Save when the beta-updates opt-in actually changed.
 @property(nonatomic, copy, nullable) void (^updateChannelChangedHandler)(void);
 
+// YES when a Sentry DSN is configured. The crash-reporting toggle is disabled
+// otherwise.
+@property(nonatomic, assign) BOOL crashReportingAvailable;
+
+// Invoked after Save when the crash-reporting opt-in actually changed.
+@property(nonatomic, copy, nullable) void (^crashReportingChangedHandler)(void);
+
 - (void)showWindowAndActivate;
 
 @end

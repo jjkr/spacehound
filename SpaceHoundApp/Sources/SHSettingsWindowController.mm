@@ -3,6 +3,7 @@
 
 #import "SHSettingsWindowController.h"
 
+#import "SHCrashReporting.h"
 #import "SHLoginItemManager.h"
 #import "SHLogging.h"
 #import "SHSettingsStore.h"
@@ -566,6 +567,8 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
 @property(nonatomic, strong) NSSwitch *launchAtLoginButton;
 @property(nonatomic, strong) NSSwitch *betaUpdatesButton;
 @property(nonatomic, strong) NSView *betaUpdatesRow;
+@property(nonatomic, strong) NSSwitch *crashReportingButton;
+@property(nonatomic, strong) NSView *crashReportingRow;
 @property(nonatomic, strong) NSSwitch *workspaceWrapButton;
 @property(nonatomic, strong) NSSwitch *workspaceTargetsFocusedDisplayButton;
 @property(nonatomic, strong) NSSwitch *displayWrapButton;
@@ -645,6 +648,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   self.betaUpdatesButton = [self makeSwitch];
   self.betaUpdatesButton.target = self;
   self.betaUpdatesButton.action = @selector(betaUpdatesChanged:);
+  self.crashReportingButton = [self makeSwitch];
   self.workspaceWrapButton = [self makeSwitch];
   self.workspaceTargetsFocusedDisplayButton = [self makeSwitch];
   self.displayWrapButton = [self makeSwitch];
@@ -663,12 +667,19 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
                          title:@"Receive beta updates"
                       subtitle:@"Get beta releases before production. They're signed and notarized "
                                @"the same way but may contain unfinished changes."];
+  self.crashReportingRow =
+      [self toggleRowForSwitch:self.crashReportingButton
+                         title:@"Send crash reports"
+                      subtitle:@"Send a report to Sentry when SpaceHound crashes. Reports include the "
+                               @"stack trace, app version, and macOS version, never your settings, "
+                               @"window titles, or identity."];
 
   NSArray<NSView *> *generalRows = @[
     [self toggleRowForSwitch:self.launchAtLoginButton
                        title:@"Launch at login"
                     subtitle:@"Automatically open SpaceHound when you sign in."],
     self.betaUpdatesRow,
+    self.crashReportingRow,
     [self toggleRowForSwitch:self.workspaceWrapButton
                        title:@"Wrap workspace navigation"
                     subtitle:@"Loop back to the first workspace after the last."],
@@ -1051,6 +1062,7 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
   [self applyDocumentToControls:document];
   [self reloadLaunchAtLoginState];
   [self reloadBetaUpdatesState];
+  [self reloadCrashReportingState];
   self.statusLabel.stringValue = @"";
   os_log_info(SHLogSettings(), "Settings reloaded from disk");
 }
@@ -1117,6 +1129,22 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
     }
   }
 
+  // Saving records a choice even when the switch is left off, so the launch
+  // prompt never reappears once the user has seen this setting.
+  const BOOL wantsCrashReports = (self.crashReportingButton.state == NSControlStateValueOn);
+  if (self.crashReportingAvailable &&
+      (![SHCrashReporting hasRecordedChoice] || wantsCrashReports != [SHCrashReporting isEnabled])) {
+    [SHCrashReporting setEnabled:wantsCrashReports];
+    if (wantsCrashReports) {
+      os_log_info(SHLogCrashReporting(), "Crash reporting enabled from Settings");
+    } else {
+      os_log_info(SHLogCrashReporting(), "Crash reporting disabled from Settings");
+    }
+    if (self.crashReportingChangedHandler != nil) {
+      self.crashReportingChangedHandler();
+    }
+  }
+
   const BOOL launchAtLoginEnabled =
       (self.launchAtLoginButton.state == NSControlStateValueOn);
   NSError *loginItemError = nil;
@@ -1169,6 +1197,14 @@ NSString *SHDisplayString(NSArray<NSString *> *modifiers, NSString *key) {
       [SHUpdateChannel receivesBetaUpdates] ? NSControlStateValueOn : NSControlStateValueOff;
   self.betaUpdatesButton.enabled = selectable;
   self.betaUpdatesRow.alphaValue = selectable ? 1.0 : 0.45;
+}
+
+- (void)reloadCrashReportingState {
+  const BOOL available = self.crashReportingAvailable;
+  self.crashReportingButton.state =
+      [SHCrashReporting isEnabled] ? NSControlStateValueOn : NSControlStateValueOff;
+  self.crashReportingButton.enabled = available;
+  self.crashReportingRow.alphaValue = available ? 1.0 : 0.45;
 }
 
 // Confirms the opt-in when the switch is flipped on; the preference itself is

@@ -74,8 +74,11 @@ cannot be verified, the installed app is left unchanged.
 
 ## Crash reporting
 
-Distributed builds automatically send crash reports to Sentry so failures can
-be diagnosed. Reports contain the crash signal or exception, native stack
+Crash reporting is opt-in. On first launch SpaceHound asks whether it may send
+crash reports to Sentry, and the choice can be changed at any time with
+**Send crash reports** in Settings. Nothing is sent until you opt in.
+
+When enabled, reports contain the crash signal or exception, native stack
 trace, SpaceHound version/build, and basic macOS/device diagnostics. SpaceHound
 does not send its settings file, user identity, screenshots, logs, analytics,
 performance traces, or network activity to Sentry.

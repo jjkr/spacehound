@@ -2,19 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #import "AppDelegate.h"
+#import "SHCrashReporting.h"
 #import "SHLogging.h"
 #import "SHPermissions.h"
 #import "SHRuntimeHost.h"
+#import "SHSentryMonitoring.h"
 #import "SHSettingsWindowController.h"
 #import "SHUpdateChannel.h"
 #import <Sparkle/Sparkle.h>
 
-@interface AppDelegate () <SPUUpdaterDelegate>
+@interface AppDelegate () <SPUUpdaterDelegate, NSMenuDelegate>
 
 @property(nonatomic, strong) NSStatusItem *statusItem;
 @property(nonatomic, strong) NSMenu *statusMenu;
 @property(nonatomic, strong) NSMenuItem *runtimeStatusItem;
 @property(nonatomic, strong) NSMenuItem *grantAccessItem;
+@property(nonatomic, strong) NSMenuItem *testCrashItem;
 @property(nonatomic, strong) SHRuntimeHost *runtimeHost;
 @property(nonatomic, strong) SHSettingsWindowController *settingsWindowController;
 @property(nonatomic, strong, nullable) NSTimer *accessibilityPollTimer;
@@ -56,6 +59,7 @@
 
   self.runtimeHost = [[SHRuntimeHost alloc] init];
   self.statusMenu = [[NSMenu alloc] initWithTitle:@"SpaceHound"];
+  self.statusMenu.delegate = self;
 
   NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"SpaceHound" action:nil keyEquivalent:@""];
   titleItem.enabled = NO;
@@ -89,6 +93,14 @@
     [self.statusMenu addItem:checkForUpdatesItem];
   }
 
+  // Revealed only while Option is held when the menu opens; see menuNeedsUpdate:.
+  self.testCrashItem = [[NSMenuItem alloc] initWithTitle:@"Test Crash Reporting…"
+                                                  action:@selector(testCrashReporting:)
+                                           keyEquivalent:@""];
+  self.testCrashItem.target = self;
+  self.testCrashItem.hidden = YES;
+  [self.statusMenu addItem:self.testCrashItem];
+
   [self.statusMenu addItem:[NSMenuItem separatorItem]];
 
   NSMenuItem *quitItem =
@@ -116,6 +128,20 @@
     // Re-evaluate the feed against the new channel set right away.
     [weakWindowSelf.updaterController.updater resetUpdateCycle];
   };
+  self.settingsWindowController.crashReportingAvailable = SHCrashReportingIsAvailable();
+  self.settingsWindowController.crashReportingChangedHandler = ^{
+    if ([SHCrashReporting isEnabled]) {
+      SHStartCrashReportingIfEnabled();
+    } else {
+      SHStopCrashReporting();
+    }
+  };
+
+  // Ask before the Accessibility prompt so the privacy decision comes first.
+  // Builds without a DSN have nothing to ask about.
+  if (SHCrashReportingIsAvailable() && ![SHCrashReporting hasRecordedChoice]) {
+    [self presentCrashReportingPrompt];
+  }
 
   [self startRuntimeOrRequestAccess];
   os_log_info(SHLogLifecycle(), "Application launch setup completed");
@@ -197,6 +223,75 @@
   (void)sender;
   os_log_info(SHLogSettings(), "Settings window requested");
   [self.settingsWindowController showWindowAndActivate];
+}
+
+#pragma mark - Status menu
+
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+  if (menu != self.statusMenu) {
+    return;
+  }
+  const BOOL optionHeld = (NSEvent.modifierFlags & NSEventModifierFlagOption) != 0;
+  self.testCrashItem.hidden = !optionHeld;
+}
+
+// The status menu auto-enables its items, so the test-crash item's state has
+// to come from validation rather than a direct `enabled` assignment.
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
+  if (menuItem.action == @selector(testCrashReporting:)) {
+    return SHCrashReportingIsAvailable() && [SHCrashReporting isEnabled];
+  }
+  return YES;
+}
+
+#pragma mark - Crash reporting
+
+- (void)presentCrashReportingPrompt {
+  [NSApp activateIgnoringOtherApps:YES];
+
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.alertStyle = NSAlertStyleInformational;
+  alert.messageText = @"Help improve SpaceHound by sending crash reports?";
+  alert.informativeText =
+      @"When SpaceHound crashes, a report can be sent to Sentry so the problem can be fixed. "
+      @"Reports contain the crash signal or exception, the stack trace, the SpaceHound version "
+      @"and build, and the macOS version and Mac model.\n\n"
+      @"Reports never include your settings, window titles, keystrokes, identity, or usage "
+      @"analytics. You can change this at any time in Settings.";
+  [alert addButtonWithTitle:@"Send Crash Reports"];
+  [alert addButtonWithTitle:@"Don't Send"];
+
+  const NSModalResponse response = [alert runModal];
+  const BOOL enabled = (response == NSAlertFirstButtonReturn);
+  [SHCrashReporting setEnabled:enabled];
+  if (enabled) {
+    os_log_info(SHLogCrashReporting(), "Crash reporting accepted at the launch prompt");
+    SHStartCrashReportingIfEnabled();
+  } else {
+    os_log_info(SHLogCrashReporting(), "Crash reporting declined at the launch prompt");
+  }
+}
+
+- (void)testCrashReporting:(id)sender {
+  (void)sender;
+  [NSApp activateIgnoringOtherApps:YES];
+
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.alertStyle = NSAlertStyleCritical;
+  alert.messageText = @"Crash SpaceHound now?";
+  alert.informativeText =
+      @"SpaceHound will quit immediately with a deliberate crash. The report is uploaded to "
+      @"Sentry the next time SpaceHound launches.\n\n"
+      @"No report is captured while a debugger is attached.";
+  [alert addButtonWithTitle:@"Crash Now"];
+  [alert addButtonWithTitle:@"Cancel"];
+
+  if ([alert runModal] != NSAlertFirstButtonReturn) {
+    os_log_info(SHLogCrashReporting(), "Test crash cancelled");
+    return;
+  }
+  // The runtime is left running on purpose: the crash should look like a real one.
+  SHCrashForTesting();
 }
 
 #pragma mark - Update channel

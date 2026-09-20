@@ -40,9 +40,9 @@ Key source files:
 - Sparkle 2 — checks the signed appcast and safely replaces/relaunches the app.
   Updater preferences are owned by Sparkle in `NSUserDefaults`, not by the
   runtime's `settings.json` schema.
-- Sentry Cocoa — captures native crashes in distributed builds. Broader Sentry
-  analytics, logs, tracing, replay, screenshots, and network instrumentation are
-  disabled.
+- Sentry Cocoa — captures native crashes in distributed builds once the user
+  opts in. Broader Sentry analytics, logs, tracing, replay, screenshots, and
+  network instrumentation are disabled.
 
 ## Prerequisites
 
@@ -74,8 +74,9 @@ The app launches as a menu bar item and can be exited from `Quit SpaceHound`.
 
 SpaceHound writes structured diagnostics to Apple's unified logging system
 under subsystem `com.jjkr.spacehound`. Logs are categorized as
-`lifecycle`, `permissions`, `navigation`, `settings`, `updates`, and
-`login-item`. The app and C++ runtime share this subsystem and category set.
+`lifecycle`, `permissions`, `navigation`, `settings`, `updates`, `login-item`,
+and `crash-reporting`. The app and C++ runtime share this subsystem and
+category set.
 The entries stay on the Mac and are not forwarded to Sentry.
 
 Stream logs while exercising a development build:
@@ -99,16 +100,35 @@ and localized error descriptions.
 ### Crash monitoring in local builds
 
 Debug builds do not contain a Sentry DSN and start without crash monitoring. To
-exercise Sentry locally, provide the public DSN only for the launched process:
+exercise Sentry locally, bake the public DSN into the build:
 
 ```sh
 SENTRY_DSN="https://PUBLIC_KEY@HOST/PROJECT_ID" make run
 ```
 
-Sentry is initialized before AppKit starts. It captures native crashes and
-uncaught Objective-C exceptions only; sessions, handled errors, app hangs,
-breadcrumbs, client reports, tracing, profiling, logs, screenshots, replay,
-MetricKit, and default PII are disabled.
+Crash reporting is opt-in. When a DSN is present and no choice has been
+recorded, the app asks on launch before the Accessibility prompt; the answer is
+stored in `NSUserDefaults` and can be changed with **Send crash reports** in
+Settings. Builds without a DSN never ask and show the toggle disabled. To see
+the prompt again:
+
+```sh
+defaults delete com.jjkr.spacehound SHCrashReportingEnabled
+```
+
+When the user has opted in, Sentry is initialized before AppKit starts. Debug
+builds report to the `development` environment and Release builds to
+`production`. Sentry captures native crashes and uncaught Objective-C
+exceptions only; sessions, handled errors, app hangs, breadcrumbs, client
+reports, tracing, profiling, logs, screenshots, replay, MetricKit, and default
+PII are disabled.
+
+To verify the pipeline end to end, hold Option while opening the menu bar menu
+and choose **Test Crash Reporting…**. The item is only enabled while crash
+reporting is on. After confirming, the app crashes deliberately; relaunch it to
+upload the report, then check the `crash-reporting` log category and the
+Sentry project. Launch the app with `make run` or from Finder rather than under
+a debugger, because no report is captured while a debugger is attached.
 
 On first launch the app creates
 `~/Library/Application Support/SpaceHound/settings.json` if it does not already

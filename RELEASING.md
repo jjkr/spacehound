@@ -143,9 +143,10 @@ Do not promote until the beta has been approved. At minimum:
   installation completes, the app relaunches, and its core behavior works.
 - With **Receive beta updates** disabled in another installation, confirm
   **Check for Updates…** does not offer it.
-- For the first monitored release, use a disposable pre-release build with a
-  temporary intentional crash, relaunch it to send the cached event, and confirm
-  Sentry shows the expected release with symbolicated SpaceHound frames.
+- With **Send crash reports** enabled, hold Option while opening the menu bar
+  menu, choose **Test Crash Reporting…**, relaunch the app to send the cached
+  event, and confirm Sentry shows the expected release in the `production`
+  environment with symbolicated SpaceHound frames.
 
 ## 4. Promote to production
 

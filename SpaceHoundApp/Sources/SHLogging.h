@@ -14,6 +14,7 @@ os_log_t SHLogNavigation(void);
 os_log_t SHLogSettings(void);
 os_log_t SHLogUpdates(void);
 os_log_t SHLogLoginItem(void);
+os_log_t SHLogCrashReporting(void);
 
 #ifdef __cplusplus
 }
