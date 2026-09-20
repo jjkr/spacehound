@@ -1,5 +1,5 @@
 <p align="center">
-  <img height="150" src="https://github.com/jjkr/spacehound/blob/main/logo.png">
+  <img height="170" src="https://github.com/jjkr/spacehound/blob/main/logo.png">
 </p>
 
 <h1 align="center">SpaceHound</h1>
