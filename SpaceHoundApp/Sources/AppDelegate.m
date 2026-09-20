@@ -15,6 +15,7 @@
 
 @property(nonatomic, strong) NSStatusItem *statusItem;
 @property(nonatomic, strong) NSMenu *statusMenu;
+@property(nonatomic, strong) NSMenuItem *runtimeErrorItem;
 @property(nonatomic, strong) NSMenuItem *grantAccessItem;
 @property(nonatomic, strong) NSMenuItem *testCrashItem;
 @property(nonatomic, strong) SHRuntimeHost *runtimeHost;
@@ -53,17 +54,23 @@
     return;
   }
 
+  button.toolTip = @"SpaceHound";
   button.image = nil;
 
   self.runtimeHost = [[SHRuntimeHost alloc] init];
   button.title = self.runtimeHost.menuBarTitle;
-  button.toolTip = [self toolTipForStatusText:self.runtimeHost.statusText];
   self.statusMenu = [[NSMenu alloc] initWithTitle:@"SpaceHound"];
   self.statusMenu.delegate = self;
 
   NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"SpaceHound" action:nil keyEquivalent:@""];
   titleItem.enabled = NO;
   [self.statusMenu addItem:titleItem];
+
+  // Revealed only while the runtime has failed to start; see enterRuntimeErrorState:.
+  self.runtimeErrorItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+  self.runtimeErrorItem.enabled = NO;
+  self.runtimeErrorItem.hidden = YES;
+  [self.statusMenu addItem:self.runtimeErrorItem];
 
   self.grantAccessItem = [[NSMenuItem alloc] initWithTitle:@"Grant Accessibility Access…"
                                                     action:@selector(grantAccess:)
@@ -106,11 +113,15 @@
   self.statusItem.menu = self.statusMenu;
 
   __weak typeof(self) weakSelf = self;
-  self.runtimeHost.stateChangeHandler = ^(NSString *menuBarTitle, NSString *statusText) {
+  self.runtimeHost.stateChangeHandler = ^(NSString *menuBarTitle, NSString *_Nullable startError) {
     NSStatusBarButton *strongButton = weakSelf.statusItem.button;
     if (strongButton != nil) {
       strongButton.title = menuBarTitle;
-      strongButton.toolTip = [weakSelf toolTipForStatusText:statusText];
+    }
+    if (startError != nil) {
+      [weakSelf enterRuntimeErrorState:startError];
+    } else if (!weakSelf.runtimeErrorItem.hidden) {
+      [weakSelf enterReadyState];
     }
   };
 
@@ -341,29 +352,34 @@
     warning.template = YES;
     button.image = warning;
     button.title = @"";
-    button.toolTip = [self toolTipForStatusText:@"Accessibility access required"];
   }
   self.grantAccessItem.hidden = NO;
 }
 
-// Clears the attention badge and hides the grant item so the runtime can drive
-// the menu bar title normally.
+// Shows the attention badge and reveals a menu item naming the start failure,
+// so a broken settings file or runtime error is visible from the menu bar.
+- (void)enterRuntimeErrorState:(NSString *)message {
+  NSStatusBarButton *button = self.statusItem.button;
+  if (button != nil) {
+    NSImage *warning = [NSImage imageWithSystemSymbolName:@"exclamationmark.triangle"
+                                 accessibilityDescription:message];
+    warning.template = YES;
+    button.image = warning;
+    button.title = @"";
+  }
+  self.runtimeErrorItem.title = message;
+  self.runtimeErrorItem.hidden = NO;
+}
+
+// Clears the attention badge and hides the grant and error items so the runtime
+// can drive the menu bar title normally.
 - (void)enterReadyState {
   NSStatusBarButton *button = self.statusItem.button;
   if (button != nil) {
     button.image = nil;
-    button.toolTip = [self toolTipForStatusText:self.runtimeHost.statusText];
   }
   self.grantAccessItem.hidden = YES;
-}
-
-// The runtime status ("Space 3 of 5", "Stopped", an error) has no menu item of
-// its own; it is surfaced by hovering the menu bar item.
-- (NSString *)toolTipForStatusText:(NSString *)statusText {
-  if (statusText.length == 0) {
-    return @"SpaceHound";
-  }
-  return [NSString stringWithFormat:@"SpaceHound — %@", statusText];
+  self.runtimeErrorItem.hidden = YES;
 }
 
 - (void)presentAccessibilityPrompt {

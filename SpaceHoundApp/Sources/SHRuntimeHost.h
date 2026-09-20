@@ -7,9 +7,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface SHRuntimeHost : NSObject
 
-@property(nonatomic, copy, readonly) NSString *statusText;
+// The current Space number while the runtime is running, otherwise empty.
 @property(nonatomic, copy, readonly) NSString *menuBarTitle;
-@property(nonatomic, copy, nullable) void (^stateChangeHandler)(NSString *menuBarTitle, NSString *statusText);
+// Why the last start attempt failed; nil while the runtime is stopped or running.
+@property(nonatomic, copy, readonly, nullable) NSString *startError;
+@property(nonatomic, copy, nullable) void (^stateChangeHandler)(NSString *menuBarTitle,
+                                                                NSString *_Nullable startError);
 
 - (BOOL)applySettings:(NSError *_Nullable *_Nullable)error;
 - (void)start;

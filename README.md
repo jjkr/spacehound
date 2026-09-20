@@ -54,9 +54,9 @@ access is granted. If you skip the prompt, the menu bar shows a ⚠️ badge and
 
 ## The menu bar
 
-The menu bar shows the current Space number (for example, **3**). Hover over it
-for the full status (for example, "Space 3 of 5", or a message if access is
-needed). Click it for the menu:
+The menu bar shows the current Space number (for example, **3**). If SpaceHound
+can't run, it shows a ⚠️ badge instead and the menu explains why. Click it for the
+menu:
 
 - **Grant Accessibility Access…** — shown only when access hasn't been granted yet.
 - **Settings…** (⌘,) — open the Settings window.

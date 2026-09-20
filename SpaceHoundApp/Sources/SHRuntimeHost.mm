@@ -17,8 +17,8 @@ auto settings_file_path(NSURL *url) -> std::filesystem::path {
 
 @interface SHRuntimeHost ()
 
-@property(nonatomic, copy) NSString *statusText;
 @property(nonatomic, copy) NSString *menuBarTitle;
+@property(nonatomic, copy, nullable) NSString *startError;
 
 - (void)handleWorkspaceStateChangeWithCurrentSpace:(NSUInteger)currentSpace
                                          numSpaces:(NSUInteger)numSpaces;
@@ -26,7 +26,7 @@ auto settings_file_path(NSURL *url) -> std::filesystem::path {
 - (BOOL)startRuntime:(NSError *_Nullable *_Nullable)error;
 - (void)refreshRuntimeState;
 - (NSString *)statusTextForError:(const spacehound::daemon::error &)error;
-- (void)updateMenuBarTitle:(NSString *)menuBarTitle statusText:(NSString *)statusText;
+- (void)updateMenuBarTitle:(NSString *)menuBarTitle startError:(nullable NSString *)startError;
 
 @end
 
@@ -53,8 +53,8 @@ static void SHRuntimeHostActiveSpaceChanged(
     return nil;
   }
 
-  _statusText = @"Stopped";
   _menuBarTitle = @"";
+  _startError = nil;
   return self;
 }
 
@@ -69,7 +69,7 @@ static void SHRuntimeHostActiveSpaceChanged(
   }
 
   os_log_info(SHLogLifecycle(), "Runtime starting");
-  [self updateMenuBarTitle:@"" statusText:@"Starting..."];
+  [self updateMenuBarTitle:@"" startError:nil];
 
   NSError *runtimeError = nil;
   if (![self startRuntime:&runtimeError]) {
@@ -78,7 +78,7 @@ static void SHRuntimeHostActiveSpaceChanged(
                  runtimeError.domain,
                  (long)runtimeError.code);
     NSString *message = runtimeError.localizedDescription ?: @"Failed to start";
-    [self updateMenuBarTitle:@"" statusText:message];
+    [self updateMenuBarTitle:@"" startError:message];
     return;
   }
 
@@ -93,7 +93,7 @@ static void SHRuntimeHostActiveSpaceChanged(
     os_log_info(SHLogLifecycle(), "Runtime stopped");
   }
 
-  [self updateMenuBarTitle:@"" statusText:@"Stopped"];
+  [self updateMenuBarTitle:@"" startError:nil];
 }
 
 - (BOOL)applySettings:(NSError *_Nullable *_Nullable)error {
@@ -137,7 +137,7 @@ static void SHRuntimeHostActiveSpaceChanged(
                                          numSpaces:(NSUInteger)numSpaces {
   if (currentSpace == 0 || numSpaces == 0) {
     os_log_debug(SHLogNavigation(), "Workspace state changed but its bounds are unavailable");
-    [self updateMenuBarTitle:@"" statusText:@"Running"];
+    [self updateMenuBarTitle:@"" startError:nil];
     return;
   }
 
@@ -145,10 +145,7 @@ static void SHRuntimeHostActiveSpaceChanged(
                "Workspace state changed (current=%{private}lu total=%{private}lu)",
                (unsigned long)currentSpace,
                (unsigned long)numSpaces);
-  [self updateMenuBarTitle:[NSString stringWithFormat:@"%lu", (unsigned long)currentSpace]
-                statusText:[NSString stringWithFormat:@"Space %lu of %lu",
-                                                      (unsigned long)currentSpace,
-                                                      (unsigned long)numSpaces]];
+  [self updateMenuBarTitle:[NSString stringWithFormat:@"%lu", (unsigned long)currentSpace] startError:nil];
 }
 
 - (NSString *)statusTextForError:(const spacehound::daemon::error &)error {
@@ -219,15 +216,15 @@ static void SHRuntimeHostActiveSpaceChanged(
   }
 
   os_log_debug(SHLogNavigation(), "Current workspace state is unavailable");
-  [self updateMenuBarTitle:@"" statusText:@"Running"];
+  [self updateMenuBarTitle:@"" startError:nil];
 }
 
-- (void)updateMenuBarTitle:(NSString *)menuBarTitle statusText:(NSString *)statusText {
+- (void)updateMenuBarTitle:(NSString *)menuBarTitle startError:(nullable NSString *)startError {
   _menuBarTitle = [menuBarTitle copy];
-  _statusText = [statusText copy];
+  _startError = [startError copy];
 
   if (self.stateChangeHandler != nil) {
-    self.stateChangeHandler(_menuBarTitle, _statusText);
+    self.stateChangeHandler(_menuBarTitle, _startError);
   }
 }
 
