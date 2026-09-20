@@ -146,11 +146,11 @@ things are derived from it and must be regenerated after it changes:
   swift scripts/generate-app-icon.swift logo.png SpaceHoundApp/Resources/Assets.xcassets/AppIcon.appiconset
   ```
 
-- `logo-black.png`, the same shape in black, which the README's `<picture>`
+- `logo-grey.png`, the same shape in medium grey, which the README's `<picture>`
   element shows on light backgrounds (`logo.png` is used for dark):
 
   ```bash
-  swift scripts/generate-black-logo.swift logo.png logo-black.png
+  swift scripts/generate-grey-logo.swift logo.png logo-grey.png
   ```
 
 ## Settings schema

@@ -2,11 +2,15 @@
 // SPDX-FileCopyrightText: 2026 Joe Kramer
 // SPDX-License-Identifier: Apache-2.0
 
-// Writes a black-on-transparent copy of the white-on-transparent logo for
-// light backgrounds, such as the README on GitHub's light theme. Only the
-// color channels are inverted; alpha is kept, so the shape is unchanged.
+// Writes a medium-grey-on-transparent copy of the white-on-transparent logo
+// for light backgrounds, such as the README on GitHub's light theme. Only the
+// color channels are scaled; alpha is kept, so the shape is unchanged. Grey
+// rather than black keeps the logo from looking heavy against a white page.
 
 import AppKit
+
+/// Brightness of the output, where 0 is black and 1 leaves the logo white.
+let grey: CGFloat = 0.5
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("error: \(message)\n".utf8))
@@ -14,7 +18,7 @@ func fail(_ message: String) -> Never {
 }
 
 guard CommandLine.arguments.count == 3 else {
-    fail("usage: generate-black-logo.swift LOGO_PNG OUTPUT_PNG")
+    fail("usage: generate-grey-logo.swift LOGO_PNG OUTPUT_PNG")
 }
 
 let inputPath = CommandLine.arguments[1]
@@ -35,9 +39,9 @@ for y in 0..<source.pixelsHigh {
         guard let color = source.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
         output.setColor(
             NSColor(
-                deviceRed: 1 - color.redComponent,
-                green: 1 - color.greenComponent,
-                blue: 1 - color.blueComponent,
+                deviceRed: color.redComponent * grey,
+                green: color.greenComponent * grey,
+                blue: color.blueComponent * grey,
                 alpha: color.alphaComponent
             ),
             atX: x, y: y
