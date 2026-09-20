@@ -25,6 +25,28 @@
 
 @end
 
+// The menu bar font used for the Space number, with monospaced digits so the
+// number keeps the same footprint no matter which digits it contains.
+static NSFont *SHStatusItemFont(void) {
+  CGFloat pointSize = [NSFont menuBarFontOfSize:0].pointSize;
+  return [NSFont monospacedDigitSystemFontOfSize:pointSize weight:NSFontWeightRegular];
+}
+
+// A status item length that depends only on how many digits the title has, so
+// the item hugs a single-digit Space number yet never resizes between two
+// numbers of the same digit count. Titles that are not a Space number (empty,
+// or replaced by the attention badge) get a standard square item.
+static CGFloat SHStatusItemLengthForTitle(NSString *title) {
+  if (title.length == 0) {
+    return [NSStatusBar systemStatusBar].thickness;
+  }
+  static const CGFloat kHorizontalPadding = 8.0;
+  NSString *widest = [@"" stringByPaddingToLength:title.length withString:@"8" startingAtIndex:0];
+  NSDictionary *attributes = @{NSFontAttributeName : SHStatusItemFont()};
+  CGFloat textWidth = ceil([widest sizeWithAttributes:attributes].width);
+  return textWidth + kHorizontalPadding;
+}
+
 @implementation AppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
@@ -47,7 +69,9 @@
     os_log_info(SHLogUpdates(), "Automatic update service disabled because no public key is configured");
   }
 
-  self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+  // The length is managed explicitly (see setMenuBarTitle:) so neighbouring
+  // menu bar items don't shift as the Space number changes.
+  self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
   NSStatusBarButton *button = self.statusItem.button;
   if (button == nil) {
     os_log_fault(SHLogLifecycle(), "Status bar button was unavailable; launch cannot continue");
@@ -56,9 +80,10 @@
 
   button.toolTip = @"SpaceHound";
   button.image = nil;
+  button.font = SHStatusItemFont();
 
   self.runtimeHost = [[SHRuntimeHost alloc] init];
-  button.title = self.runtimeHost.menuBarTitle;
+  [self setMenuBarTitle:self.runtimeHost.menuBarTitle];
   self.statusMenu = [[NSMenu alloc] initWithTitle:@"SpaceHound"];
   self.statusMenu.delegate = self;
 
@@ -114,10 +139,7 @@
 
   __weak typeof(self) weakSelf = self;
   self.runtimeHost.stateChangeHandler = ^(NSString *menuBarTitle, NSString *_Nullable startError) {
-    NSStatusBarButton *strongButton = weakSelf.statusItem.button;
-    if (strongButton != nil) {
-      strongButton.title = menuBarTitle;
-    }
+    [weakSelf setMenuBarTitle:menuBarTitle];
     if (startError != nil) {
       [weakSelf enterRuntimeErrorState:startError];
     } else if (!weakSelf.runtimeErrorItem.hidden) {
@@ -341,6 +363,21 @@
   [self presentAccessibilityPrompt];
 }
 
+// Sets the Space number shown in the menu bar and sizes the item to fit its
+// digit count, so switching between Spaces with the same number of digits
+// leaves the neighbouring menu bar items exactly where they were.
+- (void)setMenuBarTitle:(NSString *)title {
+  NSStatusBarButton *button = self.statusItem.button;
+  if (button == nil) {
+    return;
+  }
+  button.title = title;
+  CGFloat length = SHStatusItemLengthForTitle(title);
+  if (self.statusItem.length != length) {
+    self.statusItem.length = length;
+  }
+}
+
 // Shows an attention badge in the menu bar instead of a blank icon and reveals
 // the "Grant Accessibility Access…" menu item.
 - (void)enterNeedsAccessibilityState {
@@ -352,6 +389,7 @@
     warning.template = YES;
     button.image = warning;
     button.title = @"";
+    self.statusItem.length = NSSquareStatusItemLength;
   }
   self.grantAccessItem.hidden = NO;
 }
@@ -366,6 +404,7 @@
     warning.template = YES;
     button.image = warning;
     button.title = @"";
+    self.statusItem.length = NSSquareStatusItemLength;
   }
   self.runtimeErrorItem.title = message;
   self.runtimeErrorItem.hidden = NO;
